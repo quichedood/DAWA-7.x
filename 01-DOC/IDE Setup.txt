@@ -1,0 +1,26 @@
+Install PlatformIO
+
+Edit file : C:\Users\dood\.platformio\packages\framework-arduino-samd\variants\arduino_mzero
+Remove lines :
+SERCOM5_Handler()
+Uart Serial( &sercom5, PIN_SERIAL_RX, PIN_SERIAL_TX, PAD_SERIAL_RX, PAD_SERIAL_TX ) ;
+
+Change project directory in PlatformIO
+# pio settings set projects_dir "C:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects"
+
+Library Timelib
+Edit file : TimeLib.h
+Rename DAYS_PER_WEEK to DAYS_PER_WEEK_ALT
+
+Library FT800-FT813
+Edit file EVE_config.h
+l.104 : #define EVE_RiTFT43
+
+Rename "EVE_commands.c" to "EVE_commands.cpp"
+
+Edit file tft.cpp
+l.232 > #if 0 > #if 1 // enable first time calibration, report values above (l.140)
+
+Edit file EVE_target.h
+#define EVE_CS 		13
+#define EVE_PDN		9

@@ -1,0 +1,8 @@
+unified.blob                                       : 0      : 4096   : 254   : 0     : 0     : 0    
+monoMMM_5_12_ASTC.glyph                            : 4096   : 129536 : 4     : 0     : 0     : 1    
+monoMMM_5_12_ASTC.xfont                            : 133632 : 4352   : 254   : 0     : 0     : 2    
+monoMMM_5_16_ASTC.glyph                            : 137984 : 129536 : 4     : 0     : 0     : 3    
+monoMMM_5_16_ASTC.xfont                            : 267520 : 4288   : 254   : 0     : 0     : 4    
+monoMMM_5_72_ASTC.glyph                            : 271808 : 57344  : 4     : 0     : 0     : 5    
+monoMMM_5_72_ASTC.xfont                            : 329152 : 192    : 254   : 0     : 0     : 6    
+wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 329344 : 130560 : 2     : 37808 : 0     : 7    
