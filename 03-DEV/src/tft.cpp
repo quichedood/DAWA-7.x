@@ -61,12 +61,29 @@
 
  */
 
+/*
+tftScreenId reference (BUTTON NAME/TAG_ID)
+10 : default/start screen (SHUTDOWN/10, SETUP/11, START/12)
+20 : Screen when running laptimer (STOP/20, FAKELAP/21)
+50 : Setup screen (BACK/50, DIGITAL/51, ANALOG/52, OBD/53, TEMP./54, LED/55, SDCARD/56, GPS/57, TRACKS/58, EEPROM/59)
+60 : DIGITAL setup (BACK/60)
+70 : ANALOG setup (BACK/70)
+80 : OBD setup (BACK/80)
+90 : TEMP setup (BACK/90, AUTODETECT/91)
+100 : LEDs setup
+110 : SDCARD setup (BACK/110)
+120 : GPS setup (BACK/120)
+130 : TRACKS setup (BACK/130)
+140 : EEPROM setup (BACK/140, RESET EEPROM/141, LOAD DEFAULT/142
+
+*/
+
 #include <EVE.h>
 #include <Arduino.h>           // Arduino library
 #include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
-#include <MLX90614.h>          // MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
+#include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
 #include <NMEAGPS.h>           // NeoGPS library (https://github.com/SlashDevin/NeoGPS) - In "NeoTime.h" > static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR; static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
 #include <extEEPROM.h>         // EEPROM library (http://github.com/PaoloP74/extEEPROM)
 #include <helper.h>            // DAWA functions helper
@@ -89,34 +106,6 @@
 #define MEM_FONT_03 8640
 #define MEM_FONT_04 8832
 #define MEM_PICT_01 9024 //4352 //5696 //192 //4288 /* start of 100x100 pixel test image, ARGB565, needs 20000 bytes of memory */
-
-/*
-004.bin
-unified.blob                                       : 0      : 4096
-monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
-monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
-wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 137984 : 130560
-
-005.bin
-unified.blob                                       : 0      : 4096
-monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
-monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
-monoMMM_5_16_ASTC.glyph                            : 137984 : 129536
-monoMMM_5_16_ASTC.xfont                            : 267520 : 4288
-wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 271808 : 130560
-
-007.bin
-unified.blob                                       : 0      : 4096
-monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
-monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
-monoMMM_5_16_ASTC.glyph                            : 137984 : 129536
-monoMMM_5_16_ASTC.xfont                            : 267520 : 4288
-monoMMM_5_72_ASTC.glyph                            : 271808 : 57344
-monoMMM_5_72_ASTC.xfont                            : 329152 : 192
-monoMMM_5_100_ASTC.glyph                           : 329344 : 122880
-monoMMM_5_100_ASTC.xfont                           : 452224 : 192
-wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 452416 : 130560
-*/
 
 #define MEM_DL_STATIC (EVE_RAM_G_SIZE - 4096) /* 0xff000 - start-address of the static part of the display-list, upper 4k of gfx-mem */
 
@@ -228,41 +217,8 @@ void TFT_init(void)
     touch_calibrate();
 
     EVE_init_flash();
-    //EVE_cmd_flashread(MEM_FONT_01, 426048, 5696); /* copy from FLASH (read 4288 bits starting offset 84608) to G-RAM (MEM_FONT_01/.xfont) */
-    //EVE_cmd_flashread(MEM_PICT_01, 431744, 130560);
-
-    // flash 004.bin
-    //EVE_cmd_flashread(MEM_FONT_01, 133632, 4352); /* copy from FLASH (read 4288 bits starting offset 84608) to G-RAM (MEM_FONT_01/.xfont) */
-    //EVE_cmd_flashread(MEM_PICT_01, 137984, 130560);
-
-    // flash 005.bin
-    //EVE_cmd_flashread(MEM_FONT_01, 133632, 4352); /* copy from FLASH (read 4288 bits starting offset 84608) to G-RAM (MEM_FONT_01/.xfont) */
-    //EVE_cmd_flashread(MEM_FONT_02, 267520, 4288);
-    //EVE_cmd_flashread(MEM_PICT_01, 271808, 130560);
-
-    // flash 006.bin
-    EVE_cmd_flashread(MEM_FONT_01, 133632, 4352); /* copy from FLASH (read 4288 bits starting offset 84608) to G-RAM (MEM_FONT_01/.xfont) */
-    EVE_cmd_flashread(MEM_FONT_02, 267520, 4288);
-    EVE_cmd_flashread(MEM_FONT_03, 329152, 192);
-    EVE_cmd_flashread(MEM_FONT_04, 452224, 192);
-    EVE_cmd_flashread(MEM_PICT_01, 452416, 130560);
-
     /*
-    004.bin
-    unified.blob                                       : 0      : 4096
-    monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
-    monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
-    wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 137984 : 130560
-
-    005.bin
-    unified.blob                                       : 0      : 4096
-    monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
-    monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
-    monoMMM_5_16_ASTC.glyph                            : 137984 : 129536
-    monoMMM_5_16_ASTC.xfont                            : 267520 : 4288
-    wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 271808 : 130560
-
-    007.bin
+    008.bin
     unified.blob                                       : 0      : 4096
     monoMMM_5_12_ASTC.glyph                            : 4096   : 129536
     monoMMM_5_12_ASTC.xfont                            : 133632 : 4352
@@ -270,10 +226,21 @@ void TFT_init(void)
     monoMMM_5_16_ASTC.xfont                            : 267520 : 4288
     monoMMM_5_72_ASTC.glyph                            : 271808 : 57344
     monoMMM_5_72_ASTC.xfont                            : 329152 : 192
-    monoMMM_5_100_ASTC.glyph                           : 329344 : 122880
-    monoMMM_5_100_ASTC.xfont                           : 452224 : 192
-    wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 452416 : 130560
+    wallpaper_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 329344 : 130560
+
+    unified.blob                                    : 0      : 4096
+    monoMMM_5_12_ASTC.glyph                         : 4096   : 129536
+    monoMMM_5_12_ASTC.xfont                         : 133632 : 4352
+    monoMMM_5_16_ASTC.glyph                         : 137984 : 129536
+    monoMMM_5_16_ASTC.xfont                         : 267520 : 4288
+    monoMMM_5_72_ASTC.glyph                         : 271808 : 57344
+    monoMMM_5_72_ASTC.xfont                         : 329152 : 192
+    carbon_480x272_COMPRESSED_RGBA_ASTC_4x4_KHR.raw : 329344 : 130560
     */
+    EVE_cmd_flashread(MEM_FONT_01, 133632, 4352); /* copy from FLASH (read 4288 bits starting offset 84608) to G-RAM (MEM_FONT_01/.xfont) */
+    EVE_cmd_flashread(MEM_FONT_02, 267520, 4288);
+    EVE_cmd_flashread(MEM_FONT_03, 329152, 192);
+    EVE_cmd_flashread(MEM_PICT_01, 329344, 130560);
 
     initStaticBackground();
   }
@@ -296,7 +263,7 @@ void TFT_display_setup_buttons(void)
   EVE_cmd_dl(TAG(54));
   EVE_cmd_button_var(EVE_HSIZE * 2 / 4 - TFT_BUTTON_H_SIZE / 2, TFT_BUTTON_V_SIZE * 2, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_TEMP, 0);
   EVE_cmd_dl(TAG(55));
-  EVE_cmd_button_var(EVE_HSIZE * 2 / 4 - TFT_BUTTON_H_SIZE / 2, TFT_BUTTON_V_SIZE * 4, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_LEDS, 0);
+  EVE_cmd_button_var(EVE_HSIZE * 2 / 4 - TFT_BUTTON_H_SIZE / 2, TFT_BUTTON_V_SIZE * 4, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_GENERAL, 0);
   EVE_cmd_dl(TAG(56));
   EVE_cmd_button_var(EVE_HSIZE * 2 / 4 - TFT_BUTTON_H_SIZE / 2, TFT_BUTTON_V_SIZE * 6, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_SDCARD, 0);
   EVE_cmd_dl(TAG(57));
@@ -339,6 +306,24 @@ void TFT_display_header(void)
   }
   EVE_cmd_text_var(EVE_HSIZE - (TFT_DEFAULT_BORDER_H_SIZE + 225), TFT_DEFAULT_BORDER_V_SIZE, 12, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "SAT:%u", 1, fix_data.satellites);
   EVE_color_rgb(TFTDEFAULTFONTCOLOR);
+
+  // Display error/information
+  if (msgLabel != "")
+  {
+    switch (msgType)
+    {
+    case 1:
+      EVE_color_rgb(GREEN);
+      break;
+    case 2:
+      EVE_color_rgb(RED);
+      break;
+    default:
+      EVE_color_rgb(TFTDEFAULTFONTCOLOR);
+    }
+    EVE_cmd_text(EVE_HSIZE / 2, EVE_VSIZE / 2, TFT_FONT_01_SIZE, EVE_OPT_FORMAT | EVE_OPT_CENTERX | EVE_OPT_CENTERY, msgLabel);
+    EVE_color_rgb(TFTDEFAULTFONTCOLOR);
+  }
 }
 
 /* check for touch events and setup vars for TFT_display() */
@@ -398,102 +383,98 @@ void TFT_touch(void)
     {
       tftScreenId = 20;
       toggle_lock = 1;
-      /*if (toggle_state == 0)
+      if (startLaptimer() == 1)
       {
-        toggle_state = EVE_OPT_FLAT;
+        tftScreenId = 10;
       }
-      else
-      {
-        toggle_state = 0;
-      }*/
     }
     break;
-  case 110: // STOP
+  case 20: // STOP
     if (toggle_lock == 0)
     {
       tftScreenId = 10;
       toggle_lock = 1;
-      /*if (toggle_state == 0)
-      {
-        toggle_state = EVE_OPT_FLAT;
-      }
-      else
-      {
-        toggle_state = 0;
-      }*/
+      stopLaptimer();
     }
     break;
-  case 50:
+  case 21: // FAKELAP
+    if (toggle_lock == 0)
+    {
+      toggle_lock = 1;
+      fakeLap = true;
+    }
+    break;
+  case 50: // Setup screen > Back to start screen
     if (toggle_lock == 0)
     {
       tftScreenId = 10;
       toggle_lock = 1;
     }
     break;
-  case 51:
+  case 51: // Setup screen > DIGITAL setup
     if (toggle_lock == 0)
     {
       tftScreenId = 60;
       toggle_lock = 1;
     }
     break;
-  case 52:
+  case 52: // Setup screen > ANALOG setup
     if (toggle_lock == 0)
     {
       tftScreenId = 70;
       toggle_lock = 1;
     }
     break;
-  case 53:
+  case 53: // Setup screen > OBD setup
     if (toggle_lock == 0)
     {
       tftScreenId = 80;
       toggle_lock = 1;
     }
     break;
-  case 54:
+  case 54: // Setup screen > TEMP sensors setup
     if (toggle_lock == 0)
     {
       tftScreenId = 90;
       toggle_lock = 1;
     }
     break;
-  case 55:
+  case 55: // Setup screen > GENERAL setup
     if (toggle_lock == 0)
     {
       tftScreenId = 100;
       toggle_lock = 1;
     }
     break;
-  case 56:
+  case 56: // Setup screen > SDCARD setup
     if (toggle_lock == 0)
     {
       tftScreenId = 110;
       toggle_lock = 1;
     }
     break;
-  case 57:
+  case 57: // Setup screen > GPS setup
     if (toggle_lock == 0)
     {
       tftScreenId = 120;
       toggle_lock = 1;
     }
     break;
-  case 58:
+  case 58: // Setup screen > TRACKS setup
     if (toggle_lock == 0)
     {
       tftScreenId = 130;
       toggle_lock = 1;
     }
     break;
-  case 59:
+  case 59: // Setup screen > EEPROM setup
     if (toggle_lock == 0)
     {
       tftScreenId = 140;
       toggle_lock = 1;
     }
     break;
-  case 61:
+  case 61: // DIGITAL setup > Set ON/OFF digital input 1
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -507,7 +488,7 @@ void TFT_touch(void)
       }
     }
     break;
-    case 62:
+  case 62: // DIGITAL setup > Set ON/OFF digital input 2
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -521,7 +502,7 @@ void TFT_touch(void)
       }
     }
     break;
-    case 63:
+  case 63: // DIGITAL setup > Set ON/OFF digital input 3
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -535,7 +516,7 @@ void TFT_touch(void)
       }
     }
     break;
-    case 64:
+  case 64: // DIGITAL setup > Set ON/OFF digital input 4
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -549,7 +530,7 @@ void TFT_touch(void)
       }
     }
     break;
-    case 65: // Back to setup screen and save to EEPROM digital setup
+  case 65: // DIGITAL setup > Back to setup screen and save digital setup input states to EEPROM
     if (toggle_lock == 0)
     {
       EEPROM_writeAnything(70, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
@@ -557,7 +538,7 @@ void TFT_touch(void)
       toggle_lock = 1;
     }
     break;
-  case 71:
+  case 71: // ANALOG setup > Set ON/OFF analog input 1
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -572,7 +553,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 72:
+  case 72: // ANALOG setup > Set ON/OFF analog input 2
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -587,7 +568,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 73:
+  case 73: // ANALOG setup > Set ON/OFF analog input 3
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -602,7 +583,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 74:
+  case 74: // ANALOG setup > Set ON/OFF analog input 4
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -617,7 +598,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 75:
+  case 75: // ANALOG setup > Set ON/OFF analog input 5
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -632,7 +613,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 76:
+  case 76: // ANALOG setup > Set ON/OFF analog input 6
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -647,7 +628,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 77:
+  case 77: // ANALOG setup > Set ON/OFF analog input 7
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -662,7 +643,7 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 78:
+  case 78: // ANALOG setup > Set ON/OFF analog input 8
     if (toggle_lock == 0)
     {
       toggle_lock = 1;
@@ -677,10 +658,98 @@ void TFT_touch(void)
       configureADC(enAnalogInputsBits);
     }
     break;
-  case 79: // Back to setup screen and save to EEPROM analog setup
+  case 79: // ANALOG setup > Back to setup screen and save analog setup input states to EEPROM
     if (toggle_lock == 0)
     {
       EEPROM_writeAnything(71, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
+      tftScreenId = 50;
+      toggle_lock = 1;
+    }
+    break;
+  case 80: // OBD > Back to setup screen
+    if (toggle_lock == 0)
+    {
+      tftScreenId = 50;
+      toggle_lock = 1;
+    }
+    break;
+  case 90: // TEMP. > Back to setup screen
+    if (toggle_lock == 0)
+    {
+      tftScreenId = 50;
+      toggle_lock = 1;
+    }
+    break;
+  case 91: // TEMP. > Autodetect MLX
+    if (toggle_lock == 0)
+    {
+      autodetectMlx();
+      tftScreenId = 90;
+      toggle_lock = 1;
+    }
+    break;
+  case 100: // GENERAL > Back to setup screen (and save to EEPROM)
+    if (toggle_lock == 0)
+    {
+      eepromSaveRunningValues();
+      tftScreenId = 50;
+      toggle_lock = 1;
+    }
+    break;
+  case 101: // GENERAL > + rpmCorrectionRatio
+    if (toggle_lock == 0)
+    {
+      rpmCorrectionRatio++;
+      toggle_lock = 1;
+    }
+    break;
+  case 102: // GENERAL > - rpmCorrectionRatio
+    if (toggle_lock == 0)
+    {
+      rpmCorrectionRatio--;
+      toggle_lock = 1;
+    }
+    break;
+  case 103: // GENERAL > + rpmFlywheelTeeth
+    if (toggle_lock == 0)
+    {
+      rpmFlywheelTeeth++;
+      toggle_lock = 1;
+    }
+    break;
+  case 104: // GENERAL > - rpmFlywheelTeeth
+    if (toggle_lock == 0)
+    {
+      rpmFlywheelTeeth--;
+      toggle_lock = 1;
+    }
+    break;
+  /*case 100: // LEDs (TEST)
+    if (track == 0)
+    {
+      EVE_cmd_track(80, 80, 200, 40, 100);
+      track = 10;
+    }
+    else
+    {
+      tracker_val = EVE_memRead32(REG_TRACKER);
+      if ((tracker_val & 0xff) == 100)
+      {
+        tracker_val = tracker_val / 536870;
+        PST_Cmd_n_SpeedMechCmd = 8000 - tracker_val;
+      }
+    }
+    break;*/
+  case 110: // SDCARD > Back to setup screen
+    if (toggle_lock == 0)
+    {
+      tftScreenId = 50;
+      toggle_lock = 1;
+    }
+    break;
+  case 130: // TRACKS > Back to setup screen
+    if (toggle_lock == 0)
+    {
       tftScreenId = 50;
       toggle_lock = 1;
     }
@@ -695,10 +764,7 @@ void TFT_touch(void)
   case 141: // Reset EEPROM
     if (toggle_lock == 0)
     {
-      for (uint8_t i = 0; i < 128; i++)
-      {
-        eep.write(i, 0);
-      }
+      eepromReset();
       eepromReload();
       tftScreenId = 140;
       toggle_lock = 1;
@@ -707,8 +773,7 @@ void TFT_touch(void)
   case 142: // Load default EEPROM values
     if (toggle_lock == 0)
     {
-      EEPROM_writeAnything(28, (uint8_t)DEFAULT_RPM_CORRECTION_RATIO) == sizeof(rpmCorrectionRatio);
-      EEPROM_writeAnything(29, (uint8_t)DEFAULT_RPM_FLYWHEEL_TEETH) == sizeof(rpmFlywheelTeeth);
+      eepromLoadDefaults();
       eepromReload();
       tftScreenId = 140;
       toggle_lock = 1;
@@ -721,23 +786,6 @@ void TFT_touch(void)
       //....
     }
     break;*/
-
-  case 100:
-    if (track == 0)
-    {
-      EVE_cmd_track(80, 80, 200, 40, 100); /* start tracking */
-      track = 10;
-    }
-    else
-    {
-      tracker_val = EVE_memRead32(REG_TRACKER);
-      if ((tracker_val & 0xff) == 100)
-      {
-        tracker_val = tracker_val / 536870; /* scale to 8000 max */
-        PST_Cmd_n_SpeedMechCmd = 8000 - tracker_val;
-      }
-    }
-    break;
   }
 }
 
@@ -748,34 +796,9 @@ void TFT_display(void)
 {
   if (tft_active != 0)
   {
-    /*
-    * tftScreenId reference
-    * 10 : default/start screen (SHUTDOWN/10, SETUP/11, START/12)
-    * 20 : running screen (STOP/20)
-    * 50 : SETUP screen (BACK/50, DIGITAL/51, ANALOG/52, OBD/53, TEMP./54, LED/55, SDCARD/56, GPS/57, TRACKS/58, EEPROM/59)
-    * 60 : DIGITAL setup
-    * 70 : ANALOG setup
-    * 80 : OBD setup
-    * 90 : TEMP setup
-    * 100 : LEDs setup
-    * 110 : SDCARD setup
-    * 120 : GPS setup (BACK/140, 
-    * 130 : TRACKS setup
-    * 140 : EEPROM setup (BACK/140, RESET EEPROM/141, LOAD DEFAULT/142
-    * 
-    * 
-    * 
-    * 
-    * 
-    * 
-    * 
-    * 
-    * 
-    */
-
     switch (tftScreenId)
     {
-    case 10:
+    case 10:                                              // default/start screen
       EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
       EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
       EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
@@ -787,34 +810,95 @@ void TFT_display(void)
       // Display button
       EVE_cmd_dl(DL_COLOR_RGB | TFTDEFAULTFONTCOLOR);
       EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
-      EVE_cmd_dl(TAG(10));         /* assign tag-value '20' to the button that follows */
+      EVE_cmd_dl(TAG(10));
       EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_SHUTDOWN, 0);
-      EVE_cmd_dl(TAG(11)); /* assign tag-value '10' to the button that follows */
+      EVE_cmd_dl(TAG(11));
       EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE + (TFT_BUTTON_H_SPACE + TFT_BUTTON_H_SIZE) * 1, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_SETUP, 0);
-      EVE_cmd_dl(TAG(12)); /* assign tag-value '10' to the button that follows */
+      EVE_cmd_dl(TAG(12));
       EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE + (TFT_BUTTON_H_SPACE + TFT_BUTTON_H_SIZE) * 3, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_START, 0);
-      EVE_cmd_dl(TAG(0)); /* no touch */
+      EVE_cmd_dl(TAG(0));
 
       TFT_display_header();
 
       // Display ...
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_FONT_01_V_SPACE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "%c", 1, gear);
-      //EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, 100, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "GPS (lat2) : %+u.%-u", 2, fix_data.latitudeL() / 10000000, fix_data.latitudeL() % 10000000);
-      //EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, 120, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "GPS : %*u.%u", 3, 10, fix_data.latitudeL() / 10000000, fix_data.latitudeL() % 10000000);
-      //EVE_cmd_text_var(EVE_HSIZE - 20, 140, TFT_FONT_02_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "GPS : %*u.%u", 3, 10, fix_data.longitudeL() / 10000000, fix_data.longitudeL() % 10000000);
-      for (uint8_t i = 0; i < 8; i++)
-      {
-        EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, 50 + (TFT_FONT_02_V_SPACE * i), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "Analog %u : %d", 2, i, anaValues[i]);
-      }
-      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_H_SIZE, EVE_VSIZE - 100, TFT_FONT_03_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, 299); //fix_data.speed_kph()
+      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + 10, TFT_FONT_01_V_SPACE + 10, TFT_FONT_03_SIZE, EVE_OPT_FORMAT, "%c", 1, anaValuesChar[0]);    // GEAR
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, 52, TFT_FONT_02_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, (int)digValues[0]); // RPM
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, 75, TFT_FONT_01_SIZE, EVE_OPT_RIGHTX, LABEL_RPM, 0);
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_H_SIZE, EVE_VSIZE - 100, TFT_FONT_03_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, (int)digValues[1]); // SPEED / digValues[1] or fix_data.speed_kph()
       EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, EVE_VSIZE - 39, TFT_FONT_01_SIZE, EVE_OPT_RIGHTX, LABEL_KMH, 0);
 
-      //EVE_cmd_number(10, 120, 12, 0, tftScreenId);
+      // Infrared temp
+      for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+      {
+        if (mlxAddresses[i] != 0x00)
+        {
+          if ((int)round(mlxValues[i]) < 200)
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + (i * 60), 210, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "T%u:%u°", 2, mlxAddresses[i], (int)round(mlxValues[i]));
+          }
+          else
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + (i * 60), 210, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "T%u:HOT!", 1, mlxAddresses[i]);
+          }
+        }
+      }
+
+      // RPM
+      //digValues[0] = 13300; // TEST
+      EVE_cmd_dl(COLOR_RGB(67, 109, 121));
+      for (uint8_t i = 0; i <= 16; i++)
+      {
+        EVE_cmd_text_var((i * 25) + 70, 25, TFT_FONT_01_SIZE, EVE_OPT_FORMAT | EVE_OPT_CENTERX, "%u", 1, i);
+        EVE_cmd_dl(LINE_WIDTH(1 * 16));
+        EVE_cmd_dl(BEGIN(EVE_LINES));
+        EVE_cmd_dl(VERTEX2F((i * 25) + 70, 42));
+        EVE_cmd_dl(VERTEX2F((i * 25) + 70, 48));
+      }
+      EVE_cmd_dl(SCISSOR_XY(70, 48));                      // Coords top-left
+      EVE_cmd_dl(SCISSOR_SIZE((digValues[0] / 40), 25));   // width, height
+      EVE_cmd_gradient(75, 0, 0x436d79, 470, 0, 0x2effff); // Don't bother with "Y", Xstart and Xend
+
+      /*
+      EVE_cmd_dl(COLOR_RGB(0, 255, 0));
+      uint16_t rpmBarPos;
+      for (uint8_t i = 0; i <= 36; i++)
+      {
+        if (i < 35) // Last 2 bar have same position
+        {
+          rpmBarPos = (int)(log(i + 2) * 20); // +2 to have a nice log curve
+        }
+        if (digValues[0] >= i * 500)
+        {
+          if (i < 25)
+          {
+            EVE_cmd_dl(COLOR_RGB(0, 255, 0));
+            //EVE_cmd_dl(COLOR_A(128));
+          }
+          else
+          {
+            EVE_cmd_dl(COLOR_RGB(255, 0, 0));
+          }
+          EVE_cmd_dl(BEGIN(EVE_RECTS));
+          EVE_cmd_dl(VERTEX2F((i * 9) + 100, 150 - rpmBarPos));
+          EVE_cmd_dl(VERTEX2F((i * 9) + 105, 100 - rpmBarPos));
+        }
+        else
+        {
+          EVE_cmd_dl(COLOR_RGB(150, 150, 150));
+          EVE_cmd_dl(BEGIN(EVE_RECTS));
+          EVE_cmd_dl(VERTEX2F((i * 9) + 100, 150 - rpmBarPos));
+          EVE_cmd_dl(VERTEX2F((i * 9) + 105, 100 - rpmBarPos));
+        }
+        if ((i * 500) % 1000 == 0)
+        {
+          EVE_cmd_text_var((i * 9) + 100, 150 - rpmBarPos + 10, TFT_FONT_01_SIZE, EVE_OPT_FORMAT | EVE_OPT_CENTERX, "%u", 1, (i / 2));
+        }
+      }*/
 
       EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
       EVE_cmd_dl(CMD_SWAP);   /* make this list active */
       break;
-    case 20:
+    case 20:                                              // Screen when running laptimer (show "STOP" button)
       EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
       EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
       EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
@@ -826,21 +910,58 @@ void TFT_display(void)
       // Display button
       EVE_cmd_dl(DL_COLOR_RGB | TFTDEFAULTFONTCOLOR);
       EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
-      EVE_cmd_dl(TAG(110));        /* assign tag-value '10' to the button that follows */
+      EVE_cmd_dl(TAG(20));
       EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE + (TFT_BUTTON_H_SPACE + TFT_BUTTON_H_SIZE) * 2, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_STOP, 0);
+      EVE_cmd_dl(TAG(21));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE + (TFT_BUTTON_H_SPACE + TFT_BUTTON_H_SIZE) * 3, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_FAKELAP, 0);
       EVE_cmd_dl(TAG(0)); /* no touch */
 
       TFT_display_header();
 
       // Display ...
-      EVE_cmd_text_var(20, 20, 14, EVE_OPT_FORMAT, "Gear : %c", 1, gear);
-      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, EVE_VSIZE - 100, 14, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, 299); //fix_data.speed_kph()
-      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, EVE_VSIZE - 39, 12, EVE_OPT_RIGHTX, LABEL_KMH, 0);
+      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + 10, TFT_FONT_01_V_SPACE + 10, TFT_FONT_03_SIZE, EVE_OPT_FORMAT, "%c", 1, anaValuesChar[0]); // GEAR
+      if (recordTrackData == true)
+      {
+        EVE_cmd_text_var(EVE_HSIZE / 6, EVE_VSIZE / 3, TFT_FONT_03_SIZE, EVE_OPT_FORMAT, "%02u:%02u:%u", 3, lapSec / 60, lapSec % 60, lapCsec / 10);
+      }
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, 52, TFT_FONT_02_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, (int)digValues[0]); // RPM
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, 75, TFT_FONT_01_SIZE, EVE_OPT_RIGHTX, LABEL_RPM, 0);
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_H_SIZE, EVE_VSIZE - 100, TFT_FONT_03_SIZE, EVE_OPT_FORMAT | EVE_OPT_RIGHTX, "%u", 1, (int)digValues[1]); // SPEED / digValues[1] or fix_data.speed_kph()
+      EVE_cmd_text_var(EVE_HSIZE - TFT_DEFAULT_BORDER_V_SIZE, EVE_VSIZE - 39, TFT_FONT_01_SIZE, EVE_OPT_RIGHTX, LABEL_KMH, 0);
+
+      // Infrared temp
+      for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+      {
+        if (mlxAddresses[i] != 0x00)
+        {
+          if ((int)round(mlxValues[i]) < 200)
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + (i * 60), 210, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "T%u:%u°", 2, mlxAddresses[i], (int)round(mlxValues[i]));
+          }
+          else
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + (i * 60), 210, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "T%u:HOT!", 1, mlxAddresses[i]);
+          }
+        }
+      }
+
+      // RPM
+      EVE_cmd_dl(COLOR_RGB(67, 109, 121));
+      for (uint8_t i = 0; i <= 16; i++)
+      {
+        EVE_cmd_text_var((i * 25) + 70, 25, TFT_FONT_01_SIZE, EVE_OPT_FORMAT | EVE_OPT_CENTERX, "%u", 1, i);
+        EVE_cmd_dl(BEGIN(EVE_LINES));
+        EVE_cmd_dl(VERTEX2F((i * 25) + 70, 42));
+        EVE_cmd_dl(VERTEX2F((i * 25) + 70, 48));
+      }
+      EVE_cmd_dl(SCISSOR_XY(70, 48));                      // Coords top-left
+      EVE_cmd_dl(SCISSOR_SIZE((digValues[0] / 40), 25));   // width, height
+      EVE_cmd_gradient(75, 0, 0x436d79, 470, 0, 0x2effff); // Don't bother with "Y", Xstart and Xend
 
       EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
       EVE_cmd_dl(CMD_SWAP);   /* make this list active */
       break;
-    case 50:
+    case 50:                                              // Setup screen (show all subcategories for configuration)
       EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
       EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
       EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
@@ -873,7 +994,7 @@ void TFT_display(void)
       // Parse 4 digital inputs (label + on/off button)
       for (uint8_t i = 0; i < 4; i++)
       {
-        EVE_cmd_text_var(EVE_HSIZE / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "Digital %u", 1, i + 1);
+        EVE_cmd_text(EVE_HSIZE / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, digitalInputsLabel[i]);
         EVE_cmd_dl(TAG(61 + i));
         EVE_cmd_toggle(EVE_HSIZE * 2 / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), 40, TFT_FONT_02_SIZE, 0, (bitRead(enDigitalInputsBits, i) == true) ? 65535 : 0, "OFF\xffON");
         EVE_cmd_dl(TAG(0));
@@ -905,7 +1026,7 @@ void TFT_display(void)
       // Parse 8 analog inputs (label + on/off button)
       for (uint8_t i = 0; i < 8; i++)
       {
-        EVE_cmd_text_var(EVE_HSIZE / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "Analog %u", 1, i + 1);
+        EVE_cmd_text(EVE_HSIZE / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, analogInputsLabel[i]);
         EVE_cmd_dl(TAG(71 + i));
         EVE_cmd_toggle(EVE_HSIZE * 2 / 4, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), 40, TFT_FONT_02_SIZE, 0, (bitRead(enAnalogInputsBits, i) == true) ? 65535 : 0, "OFF\xffON");
         EVE_cmd_dl(TAG(0));
@@ -922,32 +1043,162 @@ void TFT_display(void)
       EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
       EVE_cmd_dl(CMD_SWAP);   /* make this list active */
       break;
-    case 100:                                             // LED setup
+    case 80:                                              // OBD setup
       EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
       EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
       EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
       EVE_cmd_dl(TAG(0));
 
-      /*EVE_color_rgb(YELLOW);
-      EVE_cmd_dl(LINE_WIDTH(1 * 16));
-      EVE_cmd_dl(DL_BEGIN | EVE_RECTS);
-      EVE_cmd_dl(TAG(40));
-      EVE_cmd_dl(VERTEX2F(1280, 1280)); // 80,80
-      EVE_cmd_dl(VERTEX2F(4480, 1920)); // 280,120
+      // insert static part of display-list from copy in gfx-mem
+      EVE_cmd_append(MEM_DL_STATIC, num_dl_static);
+
+      // Display date/time
+      TFT_display_header();
+
+      // Display ...
+
+      // TODO ...
+
+      // Display setup menu buttons
+      EVE_cmd_dl(DL_COLOR_RGB | WHITE);
+      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_dl(TAG(80));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_BACK, 0);
       EVE_cmd_dl(TAG(0));
-      EVE_cmd_dl(DL_END);*/
+
+      EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
+      EVE_cmd_dl(CMD_SWAP);   /* make this list active */
+      break;
+    case 90:                                              // TEMP sensors setup
+      EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
+      EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
+      EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
+      EVE_cmd_dl(TAG(0));
+
+      // insert static part of display-list from copy in gfx-mem
+      EVE_cmd_append(MEM_DL_STATIC, num_dl_static);
+
+      // Display date/time
+      TFT_display_header();
+
+      // Display ...
+      // Parse the MAX_MLX_SIZE MLX sensors
+      for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+      {
+        if (mlxAddresses[i] != 0x00)
+        {
+          if ((int)round(mlxValues[i]) < 200)
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + 50, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "Temp. sensor %u : %u°", 2, mlxAddresses[i], (int)round(mlxValues[i]));
+          }
+          else
+          {
+            EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + 50, TFT_HEADER_V_SPACE + (i * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "Temp. sensor %u : HOT!", 1, mlxAddresses[i]);
+          }
+        }
+      }
+
+      // Display setup menu buttons
+      EVE_cmd_dl(DL_COLOR_RGB | WHITE);
+      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_dl(TAG(90));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_BACK, 0);
+      EVE_cmd_dl(TAG(91));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE + (TFT_BUTTON_H_SIZE + TFT_BUTTON_H_SPACE), EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H2_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_AUTODETECT_MLX, 0);
+      EVE_cmd_dl(TAG(0));
+
+      EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
+      EVE_cmd_dl(CMD_SWAP);   /* make this list active */
+      break;
+    case 100:                                             // GENERAL setup
+      EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
+      EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
+      EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
+      EVE_cmd_dl(TAG(0));
+
+      // insert static part of display-list from copy in gfx-mem
+      EVE_cmd_append(MEM_DL_STATIC, num_dl_static);
+
+      // Display date/time
+      TFT_display_header();
+
+      // Display ...
+
+      // Display setup menu buttons
+      EVE_cmd_dl(DL_COLOR_RGB | WHITE);
+      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_dl(TAG(100));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_BACK, 0);
+      EVE_cmd_dl(TAG(0));
+
+      EVE_cmd_text_var(EVE_HSIZE / 12, TFT_HEADER_V_SPACE + (0 * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "RPM Correction ratio : %u", 1, rpmCorrectionRatio);
+      EVE_cmd_text_var(EVE_HSIZE / 12, TFT_HEADER_V_SPACE + (1 * (TFT_FONT_02_V_SPACE + 8)), TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "RPM Flywheel teeth : %u", 1, rpmFlywheelTeeth);
+
+      EVE_cmd_dl(TAG(102));
+      EVE_cmd_button_var(EVE_HSIZE / 12 * 10, TFT_HEADER_V_SPACE + (0 * (TFT_FONT_02_V_SPACE + 8)), TFT_BUTTON_H3_SIZE, TFT_BUTTON_V3_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "-", 0);
+      EVE_cmd_dl(TAG(101));
+      EVE_cmd_button_var(EVE_HSIZE / 12 * 11, TFT_HEADER_V_SPACE + (0 * (TFT_FONT_02_V_SPACE + 8)), TFT_BUTTON_H3_SIZE, TFT_BUTTON_V3_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "+", 0);
+
+      EVE_cmd_dl(TAG(104));
+      EVE_cmd_button_var(EVE_HSIZE / 12 * 10, TFT_HEADER_V_SPACE + (1 * (TFT_FONT_02_V_SPACE + 8)), TFT_BUTTON_H3_SIZE, TFT_BUTTON_V3_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "-", 0);
+      EVE_cmd_dl(TAG(103));
+      EVE_cmd_button_var(EVE_HSIZE / 12 * 11, TFT_HEADER_V_SPACE + (1 * (TFT_FONT_02_V_SPACE + 8)), TFT_BUTTON_H3_SIZE, TFT_BUTTON_V3_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, "+", 0);
+
+      EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
+      EVE_cmd_dl(CMD_SWAP);   /* make this list active */
+      break;
+    /*case 100:                                             // LEDS setup
+      EVE_cmd_dl(CMD_DLSTART);                            
+      EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   
+      EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); 
+      EVE_cmd_dl(TAG(0));
+
+      //EVE_color_rgb(YELLOW);
+      //EVE_cmd_dl(LINE_WIDTH(1 * 16));
+      //EVE_cmd_dl(DL_BEGIN | EVE_RECTS);
+      //EVE_cmd_dl(TAG(40));
+      //EVE_cmd_dl(VERTEX2F(1280, 1280)); // 80,80
+      //EVE_cmd_dl(VERTEX2F(4480, 1920)); // 280,120
+      //EVE_cmd_dl(TAG(0));
+      //EVE_cmd_dl(DL_END);
 
       EVE_cmd_dl(TAG(100));
-      EVE_cmd_slider(80, 80, 200, 10, 0, 8000 - PST_Cmd_n_SpeedMechCmd, 8000); //
+      EVE_cmd_slider(80, 80, 200, 10, 0, 8000 - PST_Cmd_n_SpeedMechCmd, 8000); 
       EVE_cmd_dl(TAG(0));
 
       EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*1, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "slider : %u", 1, tracker_val);
 
       // Display setup menu buttons
       EVE_cmd_dl(DL_COLOR_RGB | WHITE);
-      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_fgcolor(0x00c0c0c0);
       EVE_cmd_dl(TAG(50));
       EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, 13, EVE_OPT_FORMAT, MENU_BACK, 0);
+      EVE_cmd_dl(TAG(0));
+
+      EVE_cmd_dl(DL_DISPLAY);
+      EVE_cmd_dl(CMD_SWAP); 
+      break;*/
+    case 110:                                             // SDCARD setup
+      EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
+      EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
+      EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
+      EVE_cmd_dl(TAG(0));
+
+      // insert static part of display-list from copy in gfx-mem
+      EVE_cmd_append(MEM_DL_STATIC, num_dl_static);
+
+      // Display date/time
+      TFT_display_header();
+
+      // Display ...
+
+      // TODO ...
+
+      // Display setup menu buttons
+      EVE_cmd_dl(DL_COLOR_RGB | WHITE);
+      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_dl(TAG(110));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_BACK, 0);
       EVE_cmd_dl(TAG(0));
 
       EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
@@ -983,7 +1234,32 @@ void TFT_display(void)
       EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
       EVE_cmd_dl(CMD_SWAP);   /* make this list active */
       break;
+    case 130:                                             // TRACKS setup
+      EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
+      EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
+      EVE_cmd_dl(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG); /* clear the screen - this and the previous prevent artifacts between lists, Attributes are the color, stencil and tag buffers */
+      EVE_cmd_dl(TAG(0));
 
+      // insert static part of display-list from copy in gfx-mem
+      EVE_cmd_append(MEM_DL_STATIC, num_dl_static);
+
+      // Display date/time
+      TFT_display_header();
+
+      // Display ...
+
+      // TODO ...
+
+      // Display setup menu buttons
+      EVE_cmd_dl(DL_COLOR_RGB | WHITE);
+      EVE_cmd_fgcolor(0x00c0c0c0); /* some grey */
+      EVE_cmd_dl(TAG(130));
+      EVE_cmd_button_var(TFT_BUTTON_BORDER_SIZE, EVE_VSIZE - TFT_BUTTON_BORDER_SIZE - TFT_BUTTON_V_SIZE, TFT_BUTTON_H_SIZE, TFT_BUTTON_V_SIZE, TFT_FONT_02_SIZE, EVE_OPT_FORMAT, MENU_BACK, 0);
+      EVE_cmd_dl(TAG(0));
+
+      EVE_cmd_dl(DL_DISPLAY); /* instruct the graphics processor to show the list */
+      EVE_cmd_dl(CMD_SWAP);   /* make this list active */
+      break;
     case 140:                                             // EEPROM setup
       EVE_cmd_dl(CMD_DLSTART);                            /* start the display list */
       EVE_cmd_dl(DL_CLEAR_RGB | BLACK);                   /* set the default clear color to white */
@@ -1001,11 +1277,13 @@ void TFT_display(void)
       EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*3, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "rpmFlywheelTeeth : %u", 1, rpmFlywheelTeeth);
       EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*4, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "enDigitalInputsBits : %u", 1, enDigitalInputsBits);
       EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*5, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "enAnalogInputsBits : %u", 1, enAnalogInputsBits);
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*6, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaThrottleMax : %u", 1, inAnaThrottleMax);
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*7, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaOpt1Max : %u", 1, inAnaOpt1Max);
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*8, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaOpt2Max : %u", 1, inAnaOpt2Max);
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*9, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaOpt1Min : %u", 1, inAnaOpt1Min);
-      EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*10, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaOpt2Min : %u", 1, inAnaOpt2Min);
+
+      // Parse 8 analog inputs (min/max values)
+      for (uint8_t i = 0; i < 8; i++)
+      {
+        EVE_cmd_text(TFT_DEFAULT_BORDER_H_SIZE, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE) * (7 + i), TFT_FONT_01_SIZE, EVE_OPT_FORMAT, analogInputsLabel[i]);
+        EVE_cmd_text_var(TFT_DEFAULT_BORDER_H_SIZE + 50, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE) * (7 + i), TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "Min/Max : %u/%u", 2, anaMinValues[i], anaMaxValues[i]);
+      }
       EVE_cmd_text_var(220, TFT_DEFAULT_BORDER_V_SIZE + (TFT_FONT_01_V_SPACE)*2, TFT_FONT_01_SIZE, EVE_OPT_FORMAT, "inAnaGearCalib", 0);
       for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
       {

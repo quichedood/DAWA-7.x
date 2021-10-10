@@ -2,7 +2,7 @@
 #include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
-#include <MLX90614.h>          //MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
+#include <Adafruit_MLX90614.h> //MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
 #include <NMEAGPS.h>           // NeoGPS library (https://github.com/SlashDevin/NeoGPS) - In "NeoTime.h" > static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR; static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
 #include <extEEPROM.h>         // EEPROM library (http://github.com/PaoloP74/extEEPROM)
 #include <helper.h>            // DAWA functions helper
@@ -68,40 +68,83 @@ void initError(uint8_t errCode = 0)
   }
 }
 
-void eepromReload(void)
+/**************************************************************
+  #eepromLoadDefaults > Write default working values to EEPROM
+**************************************************************/
+void eepromLoadDefaults(void)
 {
-  // Read RPM correction ratio
-  EEPROM_readAnything(28, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
+  // Write default RPM correction ratio and RPM flywheel teeth number
+  EEPROM_writeAnything(0, (uint8_t)DEFAULT_RPM_CORRECTION_RATIO) == sizeof(rpmCorrectionRatio);
+  EEPROM_writeAnything(1, (uint8_t)DEFAULT_RPM_FLYWHEEL_TEETH) == sizeof(rpmFlywheelTeeth);
 
-  // Read RPM flywheel teeth
-  EEPROM_readAnything(29, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
-
-  // Read max values for analogic inputs (throttle, anaopt1, anaopt2) > 3x16 bits
-  EEPROM_readAnything(31, inAnaThrottleMax) == sizeof(inAnaThrottleMax);
-  EEPROM_readAnything(33, inAnaOpt1Max) == sizeof(inAnaOpt1Max);
-  EEPROM_readAnything(35, inAnaOpt2Max) == sizeof(inAnaOpt2Max);
-  EEPROM_readAnything(37, inAnaOpt1Min) == sizeof(inAnaOpt1Min);
-  EEPROM_readAnything(39, inAnaOpt2Min) == sizeof(inAnaOpt2Min);
-  //TODO
-
-  // Read GEAR calibration data > 16 bits
-  EEPROM_readAnything(41, inAnaGearCalib) == sizeof(inAnaGearCalib);
-
-  // Read saved MLX I2C Address (infrared temp sensors) > 6x8 bits
-  EEPROM_readAnything(60, mlxAddresses) == sizeof(mlxAddresses);
-  for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+  // Write default min/max values for analogic inputs (16 x 16 bits)
+  for (uint8_t i = 0; i < 8; i++)
   {
-    if (mlxAddresses[i] != 0x00)
-    {
-      mlx[i].begin();
-    }
+    EEPROM_writeAnything(2 + (4 * i), DEFAULT_ANA_MIN_VALUE) == sizeof(anaMinValues[i]);
+    EEPROM_writeAnything(4 + (4 * i), DEFAULT_ANA_MAX_VALUE) == sizeof(anaMaxValues[i]);
   }
 
-  // Read enabled digital inputs > 8 bits
-  EEPROM_readAnything(70, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
+  // Write GEAR (ANA1) calibration data (GEAR_CALIB_SIZE x 16 bits)
+  for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
+  {
+    EEPROM_writeAnything(34 + (2 * i), DEFAULT_GEARCALIB_VALUE + (i * 500)) == sizeof(inAnaGearCalib[i]);
+  }
 
-  // Read enabled analog inputs > 8 bits
-  EEPROM_readAnything(71, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
+  // Write enabled digital inputs (8 bits)
+  EEPROM_writeAnything(56, DEFAULT_ENDIGITALINPUTSBITS_VALUE) == sizeof(enDigitalInputsBits);
+
+  // Write enabled analog inputs (8 bits)
+  EEPROM_writeAnything(57, DEFAULT_ENANALOGINPUTSBITS_VALUE) == sizeof(enAnalogInputsBits);
+}
+
+/**************************************************************
+  #eepromSaveRunningValues > Save running values to EEPROM
+**************************************************************/
+void eepromSaveRunningValues(void)
+{
+  // Write RPM correction ratio and RPM flywheel teeth number
+  EEPROM_writeAnything(0, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
+  EEPROM_writeAnything(1, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
+}
+
+/**************************************************************
+  #eepromReset > Reset EEPROM (set "0")
+**************************************************************/
+void eepromReset(void)
+{
+  for (uint8_t i = 0; i < 128; i++)
+  {
+    eep.write(i, 0);
+  }
+}
+
+/**************************************************************
+  #eepromReload > Reload EEPROM settings to var (running program)
+**************************************************************/
+void eepromReload(void)
+{
+  // Read default RPM correction ratio and RPM flywheel teeth number
+  EEPROM_readAnything(0, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
+  EEPROM_readAnything(1, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
+
+  // Read min/max values for analogic inputs (16 x 16 bits)
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    EEPROM_readAnything(2 + (4 * i), anaMinValues[i]) == sizeof(anaMinValues[i]);
+    EEPROM_readAnything(4 + (4 * i), anaMaxValues[i]) == sizeof(anaMaxValues[i]);
+  }
+
+  // Read GEAR (ANA1) calibration data (GEAR_CALIB_SIZE x 16 bits)
+  for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
+  {
+    EEPROM_readAnything(34 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
+  }
+
+  // Read enabled digital inputs (8 bits)
+  EEPROM_readAnything(56, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
+
+  // Read enabled analog inputs (8 bits)
+  EEPROM_readAnything(57, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
 }
 
 /**************************************************************
@@ -239,7 +282,7 @@ int csvReadFloat(File *file, float *num, char delim)
 }
 
 /**************************************************************
-  Get datetime for files creation/modification on SD Card
+  #dateTimeSd > Get datetime for files creation/modification on SD Card
 **************************************************************/
 void dateTimeSd(uint16_t *date, uint16_t *time)
 {
@@ -250,7 +293,7 @@ void dateTimeSd(uint16_t *date, uint16_t *time)
 /**************************************************************
   #segIntersect > Calculate 2 line segments intersection
 **************************************************************/
-bool segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_lat, int32_t pos_prev_lon, int32_t trackLat1, int32_t trackLon1, int32_t trackLat2, int32_t trackLon2, int32_t &pos_cross_lat, int32_t &pos_cross_lon)
+boolean segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_lat, int32_t pos_prev_lon, int32_t trackLat1, int32_t trackLon1, int32_t trackLat2, int32_t trackLon2, int32_t &pos_cross_lat, int32_t &pos_cross_lon)
 {
   bool denomPositive;
   float denom, s_numer, t_numer, t;
@@ -326,20 +369,17 @@ void stopLaptimer(void)
   isRunning = false; // ... we stop recording
   logFile.close();   // Close file on SDcard
   lapFile.close();   // Close file on SDcard
-  //OLED_PORT.clear();
 }
 
 /**************************************************************
   #startLaptimer > Start laptimer (init multiple var, auto select nearest track, create files on SD card)
 **************************************************************/
-void startLaptimer(void)
+boolean startLaptimer(void)
 {
+  uint8_t bitShift = B00000001, tmpComp;
   SdFile::dateTimeCallback(dateTimeSd);
-  if (fix_data.valid.location)
-  { // We need GPS fix before starting
-    //OLED_PORT.clear();
-    //OLED_PORT.print(LABEL_AUTOSEL_TRK); OLED_PORT.println(F(" ..."));
-
+  if (fix_data.valid.location) // We need GPS fix before starting
+  {
     /**************************************************************
       Select nearest track from the file "TRACKS.csv" on sdcard
     **************************************************************/
@@ -363,15 +403,17 @@ void startLaptimer(void)
         if (coordsDistance <= maxTrackDistance)
         {
           recordTrackData = true;
-          //OLED_PORT.print(trackName); OLED_PORT.print(F(" (")); OLED_PORT.print(coordsDistance, 1); OLED_PORT.print(LABEL_LOG_KM); OLED_PORT.println(F(")"));
+#ifdef DEBUG
+          DEBUG_PORT.print("Track : ");
+          DEBUG_PORT.print(trackName);
+          DEBUG_PORT.print(" (");
+          DEBUG_PORT.print(coordsDistance);
+          DEBUG_PORT.println("km)");
+#endif
           break; // Break here so last read values are the good ones !
         }
       }
       trackFile.close();
-    }
-    if (recordTrackData == false)
-    {
-      //OLED_PORT.println(LABEL_LOG_NOTRKFILE);
     }
 
     /**************************************************************
@@ -407,88 +449,115 @@ void startLaptimer(void)
       }
       else
       {
-        initError(0);
+        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        return 1;
       }
-    }
 
-    /**************************************************************
-      Create new datafile : log file (create new)
-    **************************************************************/
-    sprintf(filename, "%02u%02u%02u-%02u%02u%02u.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
-    if (logFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
-    {
-      // Time, distance and lap (always printed)
-      logFile.print(LABEL_LOG_HEADER_1);
-
-      // Digital inputs (printed if enabled)
-      bitShift = B00000001;
-      for (uint8_t i = 0; i < 4; i++)
+      /**************************************************************
+        Create new datafile : log file (create new)
+      **************************************************************/
+      sprintf(filename, "%02u%02u%02u-%02u%02u%02u.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
+      if (logFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
       {
-        tmpComp = bitShift & enDigitalInputsBits;
-        if (tmpComp == bitShift)
-        {
-          logFile.print(digitalInputsLabel[i]);
-          logFile.print(F(";"));
-        }
-        bitShift = bitShift << 1;
-      }
+        // Time, distance and lap (always printed)
+        logFile.print(LABEL_LOG_HEADER_1);
 
-      // Analog inputs (printed if enabled)
-      bitShift = B00000001;
-      for (uint8_t i = 0; i < 8; i++)
+        // KPH, heading (always printed)
+        logFile.print(LABEL_LOG_HEADER_2);
+
+        // Digital inputs (printed if enabled)
+        bitShift = B00000001;
+        for (uint8_t i = 0; i < 4; i++)
+        {
+          tmpComp = bitShift & enDigitalInputsBits;
+          if (tmpComp == bitShift)
+          {
+            logFile.print(digitalInputsLabel[i]);
+            logFile.print(F(";"));
+          }
+          bitShift = bitShift << 1;
+        }
+
+        // Analog inputs (printed if enabled)
+        bitShift = B00000001;
+        for (uint8_t i = 0; i < 8; i++)
+        {
+          tmpComp = bitShift & enAnalogInputsBits;
+          if (tmpComp == bitShift)
+          {
+            logFile.print(analogInputsLabel[i]);
+            logFile.print(F(";"));
+          }
+          bitShift = bitShift << 1;
+        }
+
+        // Infrared temperature (printed if enabled)
+        for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+        {
+          if (mlxAddresses[i] != 0x00)
+          {
+            logFile.print(LABEL_LOG_HEADER_3);
+            logFile.print(i);
+            logFile.print(F(";"));
+          }
+        }
+
+        // Latitude & longitude (always printed)
+        logFile.println(LABEL_LOG_HEADER_4);
+      }
+      else
       {
-        tmpComp = bitShift & enAnalogInputsBits;
-        if (tmpComp == bitShift)
-        {
-          logFile.print(analogInputsLabel[i]);
-          logFile.print(F(";"));
-        }
-        bitShift = bitShift << 1;
+        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        return 1;
       }
 
-      // KPH (GPS), Orientation, ambiant temperature (always printed)
-      logFile.print(LABEL_LOG_HEADER_2);
-
-      // Infrared temperature (printed if enabled)
-      for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+      /**************************************************************
+        Create new datafile : laptime file (create new)
+      **************************************************************/
+      sprintf(filename, "%02u%02u%02u-%02u%02u%02u-LAPTIMES.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
+      if (lapFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
       {
-        if (mlxAddresses[i] != 0x00)
-        {
-          logFile.print(LABEL_LOG_HEADER_3);
-          logFile.print(i);
-          logFile.print(F(";"));
-        }
+        //
+      }
+      else
+      {
+        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        return 1;
       }
 
-      // Latitude & longitude (always printed)
-      logFile.println(LABEL_LOG_HEADER_4);
+      /**************************************************************
+        Init some vars
+      **************************************************************/
+      isRunning = true; // ... we start recording
+      lapCounter = 0;   // Lap 0 (we start from paddocks)
+      lapSec = 0;
+      lapCsec = 0;
+      totalDistance = 0;
+      addFinishLog = false;
     }
     else
     {
-      initError(0);
+      // Run as data acquisition only (no laptimer because no track found)
+      showMessage(LABEL_RUN_AS_DATALOGGER, 2, 1);
+      return 0;
     }
-
-    /**************************************************************
-      Create new datafile : laptime file (create new)
-    **************************************************************/
-    sprintf(filename, "%02u%02u%02u-%02u%02u%02u-LAPTIMES.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
-    if (lapFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
-    {
-      //
-    }
-    else
-    {
-      initError(0);
-    }
-
-    /**************************************************************
-      Init some vars
-    **************************************************************/
-    isRunning = true; // ... we start recording
-    lapCounter = 0;   // Lap 0 (we start from paddocks)
-    totalDistance = 0;
-    addFinishLog = false;
   }
+  else
+  {
+    showMessage(LABEL_NO_GPS_SIGNAL, 2, 2);
+    return 1;
+  }
+  return 0;
+}
+
+/**************************************************************
+  #showMessage > Print message on TFT
+**************************************************************/
+void showMessage(const char *label, uint8_t delay, uint8_t type)
+{
+  strcpy(msgLabel, label);
+  msgDelay = delay;
+  msgType = type;
 }
 
 /**************************************************************
@@ -538,20 +607,17 @@ void timeSubstract(int32_t s1, int32_t cs1, int32_t s2, int32_t cs2, int32_t &re
 }
 
 /**************************************************************
-  GPS time adjust
+  #adjustTime > GPS time adjust
 **************************************************************/
 void adjustTime(NeoGPS::time_t &dt)
 {
   NeoGPS::clock_t seconds = dt; // convert date/time structure to seconds
-
 #ifdef CALCULATE_DST
   //  Calculate DST changeover times once per reset and year!
   static NeoGPS::time_t changeover;
   static NeoGPS::clock_t springForward, fallBack;
-
   if ((springForward == 0) || (changeover.year != dt.year))
   {
-
     //  Calculate the spring changeover time (seconds)
     changeover.year = dt.year;
     changeover.month = springMonth;
@@ -574,21 +640,18 @@ void adjustTime(NeoGPS::time_t &dt)
     fallBack = (NeoGPS::clock_t)changeover;
   }
 #endif
-
   //  First, offset from UTC to the local timezone
   seconds += zone_offset;
-
 #ifdef CALCULATE_DST
   //  Then add an hour if DST is in effect
   if ((springForward <= seconds) && (seconds < fallBack))
     seconds += NeoGPS::SECONDS_PER_HOUR;
 #endif
-
   dt = seconds; // convert seconds back to a date/time structure
 }
 
 /**************************************************************
-  #initADC > Initialize ADC (I2C)
+  #initADC > Initialize ADC chip (I2C)
 **************************************************************/
 uint8_t initADC()
 {
@@ -603,7 +666,7 @@ uint8_t initADC()
   Wire.endTransmission();
 
   Wire.beginTransmission(0x1D);
-  Wire.write(uint8_t(0x08));            // Channel Disable Register
+  Wire.write(uint8_t(0x08));                // Channel Disable Register
   Wire.write(uint8_t(~enAnalogInputsBits)); // Enable or disable channels
   Wire.endTransmission();
 
@@ -614,7 +677,7 @@ uint8_t initADC()
 }
 
 /**************************************************************
-  #configureADC > configure ADC input bits (I2C)
+  #configureADC > configure ADC chip input bits (I2C)
 **************************************************************/
 uint8_t configureADC(uint8_t bits)
 {
@@ -624,7 +687,7 @@ uint8_t configureADC(uint8_t bits)
   Wire.endTransmission();
 
   Wire.beginTransmission(0x1D);
-  Wire.write(uint8_t(0x08)); // Channel Disable Register
+  Wire.write(uint8_t(0x08));  // Channel Disable Register
   Wire.write(uint8_t(~bits)); // Enable or disable channels
   Wire.endTransmission();
 
@@ -635,7 +698,7 @@ uint8_t configureADC(uint8_t bits)
 }
 
 /**************************************************************
-  #readAdcValue > Read one ADC value
+  #readAdcValue > Read one specific ADC value
 **************************************************************/
 int16_t readAdcValue(uint8_t registerID)
 {
@@ -652,7 +715,7 @@ int16_t readAdcValue(uint8_t registerID)
 
 /**************************************************************
   #readAdcValues > Read all ADC values (8)
-  Return ADC value or -1 if disable by user
+  Return ADC value or 0 if disable by user
 **************************************************************/
 void readAdcValues(uint16_t anaValues[])
 {
@@ -671,6 +734,183 @@ void readAdcValues(uint16_t anaValues[])
     }
     registerID++;
     bitShift = bitShift << 1;
+  }
+}
+
+/**************************************************************
+  #formatAdcValues > Format all ADC values (8)
+  Return formatted ADC values
+**************************************************************/
+void formatAdcValues(uint16_t anaValues[])
+{
+  uint8_t bitShift = B00000001, tmpComp;
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    tmpComp = bitShift & enAnalogInputsBits;
+    if (tmpComp == bitShift)
+    {
+      switch (i)
+      {
+      // bit 0 : Analog 1 (gear)
+      case 0:
+        for (uint8_t j = 0; j < GEAR_CALIB_SIZE; j++)
+        {
+          if (anaValues[i] > inAnaGearCalib[j] - GEAR_OFFSET && anaValues[i] <= inAnaGearCalib[j] + GEAR_OFFSET)
+          {
+            if (j == 0)
+            {
+              gearNCheck++;
+            }
+            if ((j == 0 && gearNCheck > 3) || j > 0) // We test 3 times to prevent displaying "N" between 2 gears
+            {
+              anaValuesChar[i] = gearName[j];
+              gearNCheck = 0;
+            }
+          }
+        }
+        // If condition is never true, last gear value is printed
+
+        /*
+        anaValuesChar[i] = 'N';
+        if (anaValues[i] <= inAnaGearCalib[1] + gearOffset)
+        {
+          anaValuesChar[i] = '1';
+        }
+        if (anaValues[i] > inAnaGearCalib[2] - gearOffset && anaValues[i] <= inAnaGearCalib[2] + gearOffset)
+        {
+          anaValuesChar[i] = '2';
+        }
+        if (anaValues[i] > inAnaGearCalib[3] - gearOffset && anaValues[i] <= inAnaGearCalib[3] + gearOffset)
+        {
+          anaValuesChar[i] = '3';
+        }
+        if (anaValues[i] > inAnaGearCalib[4] - gearOffset && anaValues[i] <= inAnaGearCalib[4] + gearOffset)
+        {
+          anaValuesChar[i] = '4';
+        }
+        if (anaValues[i] > inAnaGearCalib[5] - gearOffset && anaValues[i] <= inAnaGearCalib[5] + gearOffset)
+        {
+          anaValuesChar[i] = '5';
+        }
+        if (anaValues[i] > inAnaGearCalib[6] - gearOffset && anaValues[i] <= inAnaGearCalib[6] + gearOffset)
+        {
+          anaValuesChar[i] = '6';
+        }
+        if (anaValues[i] > inAnaGearCalib[0] - gearOffset && anaValues[i] <= inAnaGearCalib[0] + gearOffset)
+        {
+          if (gearNCheck > 3)
+          { // We test 3 times to prevent displaying "N" between 2 gears
+            anaValuesChar[i] = 'N';
+          }
+          else
+          {
+            gearNCheck++;
+          }
+        }
+        else
+        {
+          gearNCheck = 0;
+        }*/
+        break;
+      // bit 1 : Analog 2
+      case 1:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 2 : Analog 3
+      case 2:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 3 : Analog 4
+      case 3:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 4 : Analog 5
+      case 4:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 5 : Analog 6
+      case 5:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 6 : Analog 7
+      case 6:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      // bit 7 : Analog 8
+      case 7:
+        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+        break;
+      }
+    }
+    bitShift = bitShift << 1;
+  }
+}
+
+/**************************************************************
+  #autodetectMlx > Add new MLX chips
+**************************************************************/
+void autodetectMlx(void)
+{
+  uint8_t mlxAddress, mlxId = 0; // 8 to 16 bit
+  for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+  {
+    mlxAddresses[i] = 0x00; // Array which will contains all discovered MLX addresses. This array will be wrote on EEPROM at the end
+  }
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    mcp2EnableOneOutput(i);                            // Enable only one MCP output, all the others are disabled
+    Adafruit_MLX90614 mynewmlx = Adafruit_MLX90614(0); // 0 = broadcast, only one MLX chip should be plugged/powered on on I2C bus
+    mynewmlx.begin();
+    mlxAddress = mynewmlx.readAddr(); // Read MLX I2C address (default = 0x5A)
+#ifdef DEBUG
+    DEBUG_PORT.print("Autodetect MLX on MCP port ");
+    DEBUG_PORT.print(i);
+    DEBUG_PORT.print(" > addr=");
+    DEBUG_PORT.print(mlxAddress, HEX);
+    DEBUG_PORT.print(", temp=");
+    DEBUG_PORT.println(mynewmlx.readObjectTempC());
+#endif
+    if (mlxAddress != 0xFF)
+    { // If we read something ...
+      mlxAddresses[mlxId] = FIRST_MLX_ADDRESS + mlxId;
+      mynewmlx.writeAddr(mlxAddresses[mlxId]); // Set custom I2C address
+#ifdef DEBUG
+      DEBUG_PORT.print("Change MLX addr to : ");
+      DEBUG_PORT.print(mynewmlx.readAddr());
+      DEBUG_PORT.print(" (should be : ");
+      DEBUG_PORT.print(mlxAddresses[mlxId]);
+      DEBUG_PORT.println(")");
+#endif
+      mlxId++;
+    }
+  }
+  if (EEPROM_writeAnything(50, mlxAddresses) == sizeof(mlxAddresses))
+  { // Write array of addresses on EEPROM
+    //OUT_PORT.print(mlxId); OUT_PORT.println(F(" MLX detected"));
+  }
+  else
+  {
+    //OUT_PORT.println(F("Error adding new MLX sensors"));
+  }
+  mcp2EnableOneOutput(8); // Re-enable all outputs on MCP2
+}
+
+/**************************************************************
+  #mcp2EnableOneOutput > Control MCP2 outputs : only one HIGH (0 < id < 8) or all (id = 8)
+**************************************************************/
+void mcp2EnableOneOutput(uint8_t idOutput)
+{
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    if (i == idOutput || idOutput == 8)
+    {
+      MCP2.digitalWrite(i, HIGH);
+    }
+    else
+    {
+      MCP2.digitalWrite(i, LOW);
+    }
+    delay(50);
   }
 }
 

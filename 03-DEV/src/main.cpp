@@ -7,22 +7,23 @@
 
 /**************************************************************
   TODO
-  Check logfiles
-  Add trackname to filename
-  Add Bluetooth init test
-  Select tracks > view tracks
-  View last laptimes
-**************************************************************/
+  OK - Tester vitesse
+  OK - Tester RPM
+  OK - Tester MLX
+  OK - Tester valeurs sur carte SD
+  OK - Régler variables vitesse
+  Pouvoir choisir Vgps ou Vcapteur
+  Calibration gear
+  Supprimer min/max analog inputs ?
+  Affichage running
+  Lister les circuits sur la carte SD
+  Lister l'historique des chronos
+  Ajouter le nom du circuit aux noms de fichiers de log
+  Graphisme RPM
+  Nommer les inputs
+  Teste sous forme de constante (verifier tout le code)
 
-/**************************************************************
-  Debug to serial
-  Also used by NeoGPS library
 **************************************************************/
-//#define DEBUG // /!\ DAWA will wait serial connection to start
-
-#ifdef DEBUG
-#define DEBUG_PORT SERIAL_PORT_USBVIRTUAL
-#endif
 
 /**************************************************************
   #################################################
@@ -40,7 +41,7 @@
                                // In "TimeLib.h" > rename var "DAYS_PER_WEEK" to "DAYS_PER_WEEK_ALT" as the same var is already used in NeoGPS library
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
-#include <MLX90614.h>          // MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
+#include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
 #include <dtostrf.h>           // Modified dtostrf function defnition (http://forum.arduino.cc/index.php?topic=368720.0)
 #include <NMEAGPS.h>           // NeoGPS library (https://github.com/SlashDevin/NeoGPS)
                                // In "NeoTime.h" > static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR; static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
@@ -98,7 +99,7 @@ uint8_t enDigitalInputsBits; // Store enabled digital inputs (use binary values,
 // BIT 6 = N/A
 // BIT 7 = N/A
 uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary values, ex : 11000000 > inAnaOpt1 and inAnaOpt2 enabled)
-// BIT 0 = inAnaOpt1
+// BIT 0 = inAnaOpt1 (GEAR)
 // BIT 1 = inAnaOpt2
 // BIT 2 = inAnaOpt3
 // BIT 3 = inAnaOpt4
@@ -108,10 +109,8 @@ uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary values, 
 // BIT 7 = inAnaOpt8
 
 uint8_t tmpComp, bitShift; // Used to compare values for enabled inputs checks
-char gear = 'H';           // Store GEAR name (N, 1, 2, 3 ...)
 
-uint16_t inAnaGearCalib[GEAR_CALIB_SIZE];                                          // Calibration values for GEAR input
-uint16_t inAnaThrottleMax, inAnaOpt1Min, inAnaOpt2Min, inAnaOpt1Max, inAnaOpt2Max; // Max values for analog inputs calibration
+uint16_t inAnaGearCalib[GEAR_CALIB_SIZE]; // Calibration values for GEAR input, each gear has a analogic value
 uint8_t gearNCheck = 0;
 
 // SD Card
@@ -137,11 +136,10 @@ uint8_t mlxAddresses[MAX_MLX_SIZE]; // Store each MLX I2C addresses
 double mlxValues[MAX_MLX_SIZE];     // Store MLX values
 
 // Analog to Digital converter (ADC)
-//, tmpComp, bitShift;
 uint16_t anaValues[8];
+char anaValuesChar[8]; // Store value as a single character (useful for ANA1/GEAR : N,1,2,3 ...)
 uint16_t anaMinValues[8];
 uint16_t anaMaxValues[8];
-
 uint32_t digValues[4];
 
 // RPM
@@ -149,13 +147,9 @@ uint8_t rpmFlywheelTeeth;
 uint8_t rpmCorrectionRatio;
 
 // Buttons & menu
-volatile boolean mcp1Interrupt = false;
-uint8_t mcp1PinTriggeredId;               // Which pin of the MCP1 is triggered (detect which button is pressed)
-bool mcp1PinTriggeredState;               // Button is pressed or released ?
-uint32_t buttonPressed = 0;               // Time in ms a button is pressed
-uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration interval
-uint8_t showScreenId = 0;                 // Which screen are we displaying (0-9 = homepage, 10 = navigation menu, 11 ... 254 = specific pages)
-bool fakeLap = false;                     // Used to simulate a new lap (first left button when laptimer running)
+bool fakeLap = false; // Used to simulate a new lap (debug)
+char msgLabel[255];
+uint8_t msgDelay = 0, msgType = 0;
 
 // TFT screen
 uint32_t lastTftTouchSync = 0;
@@ -168,6 +162,7 @@ uint32_t Now = 0;                 // used to calculate integration interval
 uint32_t count = 0, sumCount = 0; // used to control display output rate
 float deltat = 0.0f, sum = 0.0f;  // integration interval for both filter schemes
 uint32_t rpm = 0;
+uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration interval
 #endif
 
 /**************************************************************
@@ -187,7 +182,7 @@ Adafruit_MCP23017 MCP2;
 SdFat sd;
 
 // MLX infrared temperature sensors
-MLX90614 mlx[MAX_MLX_SIZE] = {MLX90614(firstMlxAddress), MLX90614(firstMlxAddress + 1), MLX90614(firstMlxAddress + 2), MLX90614(firstMlxAddress + 3), MLX90614(firstMlxAddress + 4), MLX90614(firstMlxAddress + 5)};
+Adafruit_MLX90614 mlx[MAX_MLX_SIZE] = {Adafruit_MLX90614(FIRST_MLX_ADDRESS), Adafruit_MLX90614(FIRST_MLX_ADDRESS + 1), Adafruit_MLX90614(FIRST_MLX_ADDRESS + 2), Adafruit_MLX90614(FIRST_MLX_ADDRESS + 3), Adafruit_MLX90614(FIRST_MLX_ADDRESS + 4), Adafruit_MLX90614(FIRST_MLX_ADDRESS + 5)};
 
 // GPS
 NMEAGPS gps;
@@ -231,17 +226,17 @@ void setup()
   pinMode(EVE_CS, OUTPUT);
   digitalWrite(EVE_PDN, HIGH);
   pinMode(EVE_PDN, OUTPUT);
-  SPI.begin();                         /* sets up the SPI to run in Mode 0 and 1 MHz */
-  SPI.setClockDivider(SPI_CLOCK_DIV2); /* speed up SPI */
+  SPI.begin();                         // sets up the SPI to run in Mode 0 and 1 MHz
+  SPI.setClockDivider(SPI_CLOCK_DIV2); // speed up SPI
   TFT_init();
 
   /**************************************************************
     Init I/O pins
   **************************************************************/
-  pinMode(inDigiBrakePin, INPUT);   // Digital boolean input (brake) (0v/12v)
-  pinMode(inDigiOpt1Pin, INPUT);    // Digital boolean input (optional) (0v/12v)
-  pinMode(sdCsPin, OUTPUT);         // Chip Select for SDCARD on SPI bus
-  pinMode(powerState, OUTPUT);      // A1, power switch state (set 0 to power off)
+  pinMode(inDigiBrakePin, INPUT); // Digital boolean input (brake) (0v/12v)
+  pinMode(inDigiOpt1Pin, INPUT);  // Digital boolean input (optional) (0v/12v)
+  pinMode(sdCsPin, OUTPUT);       // Chip Select for SDCARD on SPI bus
+  pinMode(powerState, OUTPUT);    // A1, power switch state (set 0 to power off)
   digitalWrite(powerState, HIGH);
 
   /**************************************************************
@@ -294,7 +289,6 @@ void setup()
   pinPeripheral(7, PIO_SERCOM); // Pin D7 for TX
   if (!myELM327.begin(OBD2_PORT))
   {
-    //OLED_PORT.print(F("            ")); OLED_PORT.println(LABEL_FAILED);
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_OBD);
     DEBUG_PORT.print(F(" : "));
@@ -304,7 +298,6 @@ void setup()
   }
   else
   {
-    //OLED_PORT.print(F("                ")); OLED_PORT.println(LABEL_OK);
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_OBD);
     DEBUG_PORT.print(F(" : "));
@@ -315,10 +308,8 @@ void setup()
   /**************************************************************
     SD card Init (SPI)
   **************************************************************/
-  //OLED_PORT.print(LABEL_SD); OLED_PORT.print(F(":"));
   if (!sd.begin(sdCsPin, SD_SCK_MHZ(50)))
   {
-    //OLED_PORT.print(F("            ")); OLED_PORT.println(LABEL_FAILED);
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_SD);
     DEBUG_PORT.print(F(" : "));
@@ -328,7 +319,6 @@ void setup()
   }
   else
   {
-    //OLED_PORT.print(F("                ")); OLED_PORT.println(LABEL_OK);
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_SD);
     DEBUG_PORT.print(F(" : "));
@@ -339,10 +329,8 @@ void setup()
   /**************************************************************
     EEPROM Init (I2C)
   **************************************************************/
-  //OLED_PORT.print(LABEL_EEPROM); OLED_PORT.print(F(":"));
   if (!eep.begin(eep.twiClock400kHz) == 0)
   {
-    //OLED_PORT.print(F("        ")); OLED_PORT.println(LABEL_FAILED);
 #ifdef DEBUG
     DEBUG_PORT.println(LABEL_EEPROM);
     DEBUG_PORT.print(F(" : "));
@@ -353,7 +341,6 @@ void setup()
   else
   {
     eepromReload();
-    //OLED_PORT.print(F("            ")); OLED_PORT.println(LABEL_OK);
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_EEPROM);
     DEBUG_PORT.print(F(" : "));
@@ -362,23 +349,42 @@ void setup()
   }
 
   /**************************************************************
+    MLX Init (I2C)
+  **************************************************************/
+  // Read infrared temp sensors I2C Address from EEPROM (MAX_MLX_SIZE x 8 bits)
+  EEPROM_readAnything(50, mlxAddresses) == sizeof(mlxAddresses);
+  for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+  {
+    if (mlxAddresses[i] != 0x00)
+    {
+      mlx[i].begin();
+    }
+  }
+
+  /**************************************************************
     ADC Init
   **************************************************************/
-  //OLED_PORT.print(F("ADC:"));
   if (!initADC() == 0)
   {
-    //OLED_PORT.println(F("           FAILED"));
+#ifdef DEBUG
+    DEBUG_PORT.print(LABEL_ADC);
+    DEBUG_PORT.print(F(" : "));
+    DEBUG_PORT.println(LABEL_FAILED);
+#endif
     initError(4);
   }
   else
   {
-    //OLED_PORT.println(F("               OK"));
+#ifdef DEBUG
+    DEBUG_PORT.print(LABEL_ADC);
+    DEBUG_PORT.print(F(" : "));
+    DEBUG_PORT.println(LABEL_OK);
+#endif
   }
 
   /**************************************************************
     GPS Init (Serial5 - Default on Arduino m0)
   **************************************************************/
-  //OLED_PORT.print(LABEL_GPS); OLED_PORT.print(F(":"));
   GPS_PORT.begin(9600);                    // Start the UART @9600bps for the GPS device (default speed)
   sendUBX(ubxPrtConf, sizeof(ubxPrtConf)); // Set UART speed to 115200bps (Warning : @9600bps > ~5sec delay on GPS data)
   delay(100);
@@ -392,32 +398,11 @@ void setup()
   sendUBX(ubxDisableGSV, sizeof(ubxDisableGSV));
   sendUBX(ubxDisableVTG, sizeof(ubxDisableVTG));
   sendUBX(ubxDisableZDA, sizeof(ubxDisableZDA));
-  /*while (fix_data.status <= 0) {                                                                                                  // Test valid fix
-    if (gps.available(GPS_PORT)) {
-      fix_data = gps.read();
-    }
-  }*/
-  //OLED_PORT.print(F("               ")); OLED_PORT.println(LABEL_OK);
 #ifdef DEBUG
   DEBUG_PORT.print(LABEL_GPS);
   DEBUG_PORT.print(F(" : "));
   DEBUG_PORT.println(LABEL_OK);
 #endif
-
-  /**************************************************************
-    Power off leds as soon as we get a valid gps signal (ready to go)
-  **************************************************************/
-  //if (fix_data.valid.location)
-  //{ // We need GPS fix before starting
-  MCP1.digitalWrite(mcp1Led1, HIGH);
-  MCP1.digitalWrite(mcp1Led2, HIGH);
-  MCP1.digitalWrite(mcp1Led3, HIGH);
-  MCP1.digitalWrite(mcp1Led4, HIGH);
-  MCP1.digitalWrite(mcp1Led5, HIGH);
-  MCP1.digitalWrite(mcp1Led6, HIGH);
-  MCP1.digitalWrite(mcp1Led7, HIGH);
-  MCP1.digitalWrite(mcp1Led8, HIGH);
-  //}
 
   /**************************************************************
     2 counters (TCC0 & TCC1)
@@ -500,13 +485,20 @@ void setup()
   while (TCC1->SYNCBUSY.bit.ENABLE)
     ; // Wait for synchronization
 
-    // End Init
-    //OLED_PORT.print(F("              ")); OLED_PORT.print(LABEL_READY);
+  /**************************************************************
+    Power off leds as soon as init is done
+  **************************************************************/
+  MCP1.digitalWrite(mcp1Led1, HIGH);
+  MCP1.digitalWrite(mcp1Led2, HIGH);
+  MCP1.digitalWrite(mcp1Led3, HIGH);
+  MCP1.digitalWrite(mcp1Led4, HIGH);
+  MCP1.digitalWrite(mcp1Led5, HIGH);
+  MCP1.digitalWrite(mcp1Led6, HIGH);
+  MCP1.digitalWrite(mcp1Led7, HIGH);
+  MCP1.digitalWrite(mcp1Led8, HIGH);
 #ifdef DEBUG
   DEBUG_PORT.println(LABEL_READY);
 #endif
-  delay(1000);
-  //OLED_PORT.clear();
 }
 
 /**************************************************************
@@ -568,7 +560,7 @@ void loop()
             ;                                                                                      // Wait for synchronization
           digValues[i] = digValues[i] * rpmCorrectionRatio * 600 / elapsedTime / rpmFlywheelTeeth; // Ratio between pulse and rpm (22 > flywheel has 22 teeth ### 600 > with check every 100ms, RPM is by minute) ### rpmCorrectionRatio > *(100+corr) / elapsedTime) > if we read counter @101ms or 102ms values should be adjusted
           break;
-        // bit 1 : SQR1;
+        // bit 1 : SQR1/SPEED;
         case 1:
           REG_TCC0_CTRLBSET = TCC_CTRLBSET_CMD_READSYNC; // Trigger a read synchronization on the COUNT register
           while (TCC0->SYNCBUSY.bit.CTRLB)
@@ -595,96 +587,10 @@ void loop()
     }
 
     /**************************************************************
-      Read all 8 analog enabled INPUTS
-    **************************************************************/
-    bitShift = B00000001;
-    for (uint8_t i = 0; i < 8; i++)
-    { // Read values of enabled inputs only
-      tmpComp = bitShift & enAnalogInputsBits;
-      if (tmpComp == bitShift)
-      {
-        switch (i)
-        {
-        // bit 0 : Analog 1 (gear);
-        case 0:
-          anaValues[i] = constrain(anaValues[i], 0, 1023);
-          if (anaValues[i] <= inAnaGearCalib[1] + gearOffset)
-          {
-            gear = '1';
-          }
-          if (anaValues[i] > inAnaGearCalib[2] - gearOffset && anaValues[i] <= inAnaGearCalib[2] + gearOffset)
-          {
-            gear = '2';
-          }
-          if (anaValues[i] > inAnaGearCalib[3] - gearOffset && anaValues[i] <= inAnaGearCalib[3] + gearOffset)
-          {
-            gear = '3';
-          }
-          if (anaValues[i] > inAnaGearCalib[4] - gearOffset && anaValues[i] <= inAnaGearCalib[4] + gearOffset)
-          {
-            gear = '4';
-          }
-          if (anaValues[i] > inAnaGearCalib[5] - gearOffset && anaValues[i] <= inAnaGearCalib[5] + gearOffset)
-          {
-            gear = '5';
-          }
-          if (anaValues[i] > inAnaGearCalib[6] - gearOffset && anaValues[i] <= inAnaGearCalib[6] + gearOffset)
-          {
-            gear = '6';
-          }
-          if (anaValues[i] > inAnaGearCalib[0] - gearOffset && anaValues[i] <= inAnaGearCalib[0] + gearOffset)
-          {
-            if (gearNCheck > 3)
-            { // We test 3 times to prevent displaying "N" between 2 gears
-              gear = 'N';
-            }
-            else
-            {
-              gearNCheck++;
-            }
-          }
-          else
-          {
-            gearNCheck = 0;
-          }
-          break;
-        // bit 1 : Analog 2;
-        case 1:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 2 : Analog 3;
-        case 2:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 3 : Analog 4;
-        case 3:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 4 : Analog 5;
-        case 4:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 5 : Analog 6;
-        case 5:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 6 : Analog 7;
-        case 6:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        // bit 7 : Analog 8;
-        case 7:
-          anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 1023), 0, 1023);
-          break;
-        }
-      }
-      bitShift = bitShift << 1;
-    }
-
-    /**************************************************************
-      Read I2C analog values
+      Read analog enabled INPUTS
     **************************************************************/
     readAdcValues(anaValues); // Takes time to read all values (one voltage conversion = 12.2ms !)
+    formatAdcValues(anaValues);
 
     /**************************************************************
       Sync files on SDcard every 300 fixes (300x100ms = 30sec) to avoid dataloss on power failure
@@ -721,8 +627,22 @@ void loop()
       } else {
         DEBUG_PORT.print("RPM: NS "); DEBUG_PORT.println(myELM327.status);
       }*/
-      // DEBUG_PORT.print(F("MPU : ")); DEBUG_PORT.print(mpuOrientation[0], 0); DEBUG_PORT.print(F(" / ")); DEBUG_PORT.println(mpuOrientation[1], 0);
 #endif
+
+      /**************************************************************
+        If there is a message printed on screen, remove it after specified delay
+      **************************************************************/
+      if (msgLabel != "")
+      {
+        if (msgDelay == 0)
+        {
+          strcpy(msgLabel, "");
+        }
+        else
+        {
+          msgDelay--;
+        }
+      }
 
       /**************************************************************
         Read and store MLX temperature in array
@@ -731,14 +651,7 @@ void loop()
       {
         if (mlxAddresses[i] != 0x00)
         {
-          mlxValues[i] = mlx[i].readTemp(MLX90614::MLX90614_SRC01, MLX90614::MLX90614_TC);
-#ifdef DEBUG
-          if (mlx[i].rwError)
-          {
-            DEBUG_PORT.print(i);
-            DEBUG_PORT.println(":Err MLX");
-          }
-#endif
+          mlxValues[i] = mlx[i].readObjectTempC();
         }
       }
     }
@@ -749,7 +662,7 @@ void loop()
       - Log data on SDcard
 
       If laptimer is NOT running :
-      - Check bluetooth commands only
+      - N/A
     **************************************************************/
     if (isRunning)
     {
@@ -757,15 +670,15 @@ void loop()
       coordsDistance = gpsDistance(fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), fix_data.latitudeL(), fix_data.longitudeL());
       totalDistance += coordsDistance;
 
-      // Check if we pass the finishline (2x2 coordinates for finish line points + 2x2 coordinates for last position + position now)
       if (recordTrackData == true)
       {
+        // Check if we pass the finishline (2x2 coordinates for finish line points + 2x2 coordinates for last position + position now)
         if (segIntersect(fix_data.latitudeL(), fix_data.longitudeL(), fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), flineLat1, flineLon1, flineLat2, flineLon2, posCrossLat, posCrossLon) || fakeLap == true)
         {
           if (fakeLap == true)
           {
             fakeLap = false;
-            tToFl = random(1, 100) / 100.00; // Random value to simulate Time To Finish Line
+            tToFl = 0; //random(1, 100) / 100.00; // Random value to simulate Time To Finish Line
           }
           else
           {
@@ -775,26 +688,10 @@ void loop()
           // Add "Time to finish line (tToFl)" to the last known Epoch Time (fix_data_prev)
           timeAdd(tToFl, fix_data_prev.dateTime, fix_data_prev.dateTime_cs, timeSec, timeCsec);
 
-#ifdef DEBUG
-          DEBUG_PORT.println(F("TEST :"));
-          DEBUG_PORT.println(tToFl);
-          DEBUG_PORT.println(fix_data_prev.dateTime);
-          DEBUG_PORT.println(fix_data_prev.dateTime_cs);
-          DEBUG_PORT.println(timeSec);
-          DEBUG_PORT.println(timeCsec);
-#endif
-
           // Calculate total laptime (substract previous finish laptime to actual laptime)
           if (lapCounter > 0)
           { // Get first laptime at the end of the lap 1 (lapCounter = 1 / We start from the paddocks)
             timeSubstract(timeSec, timeCsec, lastFlSec, lastFlCsec, lapSec, lapCsec);
-
-#ifdef DEBUG
-            DEBUG_PORT.println(lastFlSec);
-            DEBUG_PORT.println(lastFlCsec);
-            DEBUG_PORT.println(lapSec);
-            DEBUG_PORT.println(lapCsec);
-#endif
 
             runMinutes = lapSec / 60;
             runSeconds = lapSec % 60;
@@ -816,12 +713,6 @@ void loop()
             if (lapCsec < 10)
               lapFile.print(F("0")); // Leading zeros (remember "lapCsec" is an integer !!)
             lapFile.println(lapCsec);
-
-            /*OLED_PORT.print(lapCounter); OLED_PORT.print(F(" : ")); OLED_PORT.print(runMinutes); OLED_PORT.print(F(":"));
-              if (runSeconds < 10) OLED_PORT.print(F("0")); // Leading zeros (remember "runSeconds" is an integer !!)
-              OLED_PORT.print(runSeconds); OLED_PORT.print(F("."));
-              if (lapCsec < 10) OLED_PORT.print(F("0")); // Leading zeros (remember "timeCsec" is an integer !!)
-              OLED_PORT.println(lapCsec);*/
           }
 
           // Store timestamp (sec+ms) at the finish line to calculate next lap time
@@ -834,13 +725,19 @@ void loop()
         }
         else
         {
+          // Continuously update lapSec and lapCsec for diplaying realtime values on TFT (and only for this !)
+          if (lapCounter > 0)
+          {
+            timeSubstract(fix_data.dateTime, fix_data.dateTime_cs, lastFlSec, lastFlCsec, lapSec, lapCsec);
+          }
           addFinishLog = false;
         }
       }
 
       /**************************************************************
-        Write all data to file on SD card (IMU, GPS, inAnaThrottle, gear, rpm, temperature sensors)
+        Write all data to file on SD card (GPS, inAnaThrottle, gear, rpm, temperature sensors)
       **************************************************************/
+      // Time, distance and lap (always printed)
       if (addFinishLog == true)
       {
         logFile.print(timeSec);
@@ -861,6 +758,12 @@ void loop()
       logFile.print(totalDistance, 3);
       logFile.print(F(";"));
       logFile.print(lapCounter);
+      logFile.print(F(";"));
+
+      // KPH, heading (always printed)
+      logFile.print(fix_data.speed_kph(), 0);
+      logFile.print(F(";"));
+      logFile.print(fix_data.heading(), 1);
       logFile.print(F(";"));
 
       // Digital inputs (printed if enabled)
@@ -889,10 +792,7 @@ void loop()
         bitShift = bitShift << 1;
       }
 
-      logFile.print(fix_data.speed_kph(), 0);
-      logFile.print(F(";"));
-      logFile.print(fix_data.heading(), 1);
-      logFile.print(F(";"));
+      // Infrared temperature (printed if enabled)
       for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
       {
         if (mlxAddresses[i] != 0x00)
@@ -901,6 +801,8 @@ void loop()
           logFile.print(F(";"));
         }
       }
+
+      // Latitude & longitude (always printed)
       if (addFinishLog == true)
       {
         logFile.print((posCrossLat / rescaleGPS), 9);

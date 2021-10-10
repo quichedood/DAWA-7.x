@@ -6,22 +6,43 @@
   ############## constants definition ##############
   ##################################################
 **************************************************************/
+/**************************************************************
+  Debug to serial
+  Also used by NeoGPS library
+**************************************************************/
+#define DEBUG // /!\ DAWA will wait serial connection to start
+
+#ifdef DEBUG
+#define DEBUG_PORT SERIAL_PORT_USBVIRTUAL
+#endif
+
 
 // Screen design
 #define TFTDEFAULTFONTCOLOR 0xffffffUL
 
 // Array size
 #define GEAR_CALIB_SIZE  7
-#define MAX_MLX_SIZE  6
+#define MAX_MLX_SIZE  6 // Max MLX chips that could be declared (could be more but need to add object instances, just before setup())
+#define FIRST_MLX_ADDRESS 0x01 // First given MLX I2C address (then +1 on each discovered MLX sensor)
+#define DEFAULT_GEARCALIB_VALUE 250
+#define GEAR_OFFSET 200 // Each gear has a corresponding value, this value define the interval (value - GEAR_OFFSET < measure < value + GEAR_OFFSET)       
+#define DEFAULT_ENDIGITALINPUTSBITS_VALUE 0b00001111
+#define DEFAULT_ENANALOGINPUTSBITS_VALUE 0b00001111
 
 #define DEFAULT_RPM_CORRECTION_RATIO 105
 #define DEFAULT_RPM_FLYWHEEL_TEETH 22
+
+#define DEFAULT_ANA_MIN_VALUE 0
+#define DEFAULT_ANA_MAX_VALUE 4095 // 4095 = value at 5v
 
 #define TFT_DEFAULT_BORDER_H_SIZE 5
 #define TFT_DEFAULT_BORDER_V_SIZE 1
 #define TFT_BUTTON_BORDER_SIZE 5
 #define TFT_BUTTON_H_SIZE 80
+#define TFT_BUTTON_H2_SIZE 160
+#define TFT_BUTTON_H3_SIZE 20
 #define TFT_BUTTON_V_SIZE 30
+#define TFT_BUTTON_V3_SIZE 20
 #define TFT_BUTTON_H_SPACE 10
 #define TFT_BUTTON_V_SPACE 10
 #define TFT_HEADER_H_SPACE 30
@@ -54,10 +75,7 @@ constexpr uint8_t powerState = A1;       // A1, power switch state (set 0 to pow
 // Others ...
 constexpr char csvDelim = ';';            // CSV file delimiter
 constexpr uint8_t maxTrackDistance = 5;   // Autoselect nearest track (unit = km)
-constexpr uint8_t gearOffset = 20;        // Each gear has a corresponding value, this value define the interval (value - gearOffset < measure < value + gearOffset)
-//constexpr uint8_t maxMlx = 6;             // Max MLX chips that could be declared (could be more but need to add object instances, just before setup())
-constexpr uint8_t mlxEepAddr = 0x0E;      // Internal EEPROM address on MLX chips
-constexpr uint8_t firstMlxAddress = 0x01; // First given MLX I2C address (then +1 on each discovered MLX sensor)
+
 constexpr uint8_t maxHomepageScreens = 4; // The number of defined homepage screens
 
 // GPS & Timing
@@ -112,10 +130,11 @@ constexpr uint8_t fallHour = 1;
 // Texts
 constexpr static char LABEL_VERSION[] PROGMEM = "DAwA v7.0";
 constexpr static char LABEL_KMH[] PROGMEM = "km/h";
+constexpr static char LABEL_RPM[] PROGMEM = "rpm x1000";
 
 constexpr static char MENU_SETUP[] PROGMEM = "SETUP";
 constexpr static char MENU_SHUTDOWN[] PROGMEM = "OFF";
-constexpr static char MENU_LEDS[] PROGMEM = "LED";
+constexpr static char MENU_GENERAL[] PROGMEM = "GENERAL";
 constexpr static char MENU_TEMP[] PROGMEM = "TEMP.";
 constexpr static char MENU_OBD[] PROGMEM = "OBD";
 constexpr static char MENU_ANALOG[] PROGMEM = "ANALOG";
@@ -123,12 +142,15 @@ constexpr static char MENU_DIGITAL[] PROGMEM = "DIGITAL";
 constexpr static char MENU_TRACKS[] PROGMEM = "TRACKS";
 constexpr static char MENU_START[] PROGMEM = "START";
 constexpr static char MENU_STOP[] PROGMEM = "STOP";
+constexpr static char MENU_FAKELAP[] PROGMEM = "FAKELAP";
 constexpr static char MENU_GPS[] PROGMEM = "GPS";
 constexpr static char MENU_SDCARD[] PROGMEM = "SDCARD";
 constexpr static char MENU_EEPROM[] PROGMEM = "EEPROM";
 constexpr static char MENU_RESET_EEPROM[] PROGMEM = "RESET";
 constexpr static char MENU_DEFAULT_EEPROM[] PROGMEM = "DEFAULT";
 constexpr static char MENU_BACK[] PROGMEM = "BACK";
+constexpr static char MENU_AUTODETECT_MLX[] PROGMEM = "AUTO DETECT";
+
 
 constexpr static char LABEL_DEBUG_IS_ENABLED[] PROGMEM = "DEBUG is enabled";
 constexpr static char LABEL_DAWA_INIT[] PROGMEM = "D.A.W.A. Init ...";
@@ -139,12 +161,9 @@ constexpr static char LABEL_OLED[] PROGMEM = "OLED";
 constexpr static char LABEL_SD[] PROGMEM = "SD";
 constexpr static char LABEL_OBD[] PROGMEM = "OBD";
 constexpr static char LABEL_EEPROM[] PROGMEM = "EEPROM";
+constexpr static char LABEL_ADC[] PROGMEM = "ADC";
 constexpr static char LABEL_GPS[] PROGMEM = "GPS";
 constexpr static char LABEL_READY[] PROGMEM = "READY !";
-constexpr static char LABEL_ROLL[] PROGMEM = "Roll";
-constexpr static char LABEL_PITCH[] PROGMEM = "Pitch";
-constexpr static char LABEL_ACCELX[] PROGMEM = "Accel X";
-constexpr static char LABEL_ACCELY[] PROGMEM = "Accel Y";
 constexpr static char LABEL_DEG[] PROGMEM = "deg";
 constexpr static char LABEL_G[] PROGMEM = "g";
 constexpr static char LABEL_IN_CHANGED[] PROGMEM = "Input changed";
@@ -193,19 +212,24 @@ constexpr static char LABEL_MENU_3[] PROGMEM = "           STOP";
 constexpr static char LABEL_MENU_4[] PROGMEM = " UP | DW | BACK | OK ";
 constexpr static char LABEL_WORK_PROGRESS[] PROGMEM = "Work in progress !";
 constexpr static char LABEL_LOG_HEADER_1[] PROGMEM = "TIME;DISTANCE;LAP;";
-constexpr static char LABEL_LOG_HEADER_2[] PROGMEM = "KPH;HEADING;ROLL;PITCH;AX;AY;";
+constexpr static char LABEL_LOG_HEADER_2[] PROGMEM = "KPH;HEADING;";
 constexpr static char LABEL_LOG_HEADER_3[] PROGMEM = "IRTEMP";
 constexpr static char LABEL_LOG_HEADER_4[] PROGMEM = "LATITUDE;LONGITUDE";
 constexpr static char LABEL_LOG_NEWFILE[] PROGMEM = "Create new file";
 constexpr static char LABEL_LOG_APPNDFILE[] PROGMEM = "Append file";
+constexpr static char LABEL_LOG_FILEERROR[] PROGMEM = "R/W file error !";
 constexpr static char LABEL_LOG_NOTRKFILE[] PROGMEM = "No track file !";
 constexpr static char LABEL_LOG_KM[] PROGMEM = "km";
 constexpr static char LABEL_AUTOSEL_TRK[] PROGMEM = "Auto-select track";
 constexpr static char LABEL_NEW_SESSION[] PROGMEM = "[Start new session !]";
 constexpr static char LABEL_END_SESSION[] PROGMEM = "[Session stopped !]";
+constexpr static char LABEL_NO_GPS_SIGNAL[] PROGMEM = "No valid GPS signal !";
+constexpr static char LABEL_RUN_AS_DATALOGGER[] PROGMEM = "No track file, run as datalogger only";
+
 
 const char *const digitalInputsLabel[] = {"RPM", "SQR1", "DIG1", "DIG2"};
 const char *const analogInputsLabel[] = {"GEAR", "ANA2", "ANA3", "ANA4", "ANA5", "ANA6", "ANA7", "ANA8"};
+const char gearName[] = {'N', '1', '2', '3', '4', '5', '6'}; 
 
 /**************************************************************
   #############################################
@@ -240,10 +264,9 @@ extern uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary v
 // BIT 5 = inAnaOpt6
 // BIT 6 = inAnaOpt7
 // BIT 7 = inAnaOpt8
-extern uint8_t tmpComp, bitShift;                                                         // Used to compare values for enabled inputs checks
-extern char gear;                                                                         // Store GEAR name (N, 1, 2, 3 ...)
-extern uint16_t inAnaGearCalib[7];                                                        // Calibration values for GEAR input
-extern uint16_t inAnaThrottleMax, inAnaOpt1Min, inAnaOpt2Min, inAnaOpt1Max, inAnaOpt2Max; // Max values for analog inputs calibration
+extern uint8_t tmpComp, bitShift; // Used to compare values for enabled inputs checks
+
+extern uint16_t inAnaGearCalib[7]; // Calibration values for GEAR input
 extern uint8_t gearNCheck;
 
 // SD Card
@@ -266,9 +289,9 @@ extern uint8_t gpsFixStatus;
 
 // Analog to Digital converter (ADC)
 extern uint16_t anaValues[8];
+extern char anaValuesChar[8]; // Store value as a single character (useful for ANA1/GEAR : N,1,2,3 ...)
 extern uint16_t anaMinValues[8];
 extern uint16_t anaMaxValues[8];
-
 extern uint32_t digValues[4];
 
 // Infrared temp sensor
@@ -280,19 +303,14 @@ extern uint8_t rpmFlywheelTeeth;
 extern uint8_t rpmCorrectionRatio;
 
 // Buttons & menu
-extern volatile boolean mcp1Interrupt;
-extern uint8_t mcp1PinTriggeredId;       // Which pin of the MCP1 is triggered (detect which button is pressed)
-extern bool mcp1PinTriggeredState;       // Button is pressed or released ?
-extern uint32_t buttonPressed;           // Time in ms a button is pressed
-extern uint32_t lastUpdate, firstUpdate; // used to calculate integration interval
-extern uint8_t showScreenId;             // Which screen are we displaying (0-9 = homepage, 10 = navigation menu, 11 ... 254 = specific pages)
 extern bool fakeLap;                     // Used to simulate a new lap (first left button when laptimer running)
+extern char msgLabel[255];
+extern uint8_t msgDelay, msgType;
 
 // TFT screen
 extern uint32_t lastTftTouchSync;
 extern uint8_t lastTftPrintSync;
 extern uint32_t currentMs;
-extern uint8_t tftScreenId;
 extern uint8_t tftScreenId; // Which screen is printed (0 = start page) / defined as "extern uint8_t" in tft.cpp
 
 /**************************************************************
@@ -303,8 +321,9 @@ extern uint8_t tftScreenId; // Which screen is printed (0 = start page) / define
 
 extern extEEPROM eep;
 extern Adafruit_MCP23017 MCP1;
+extern Adafruit_MCP23017 MCP2;
 extern SdFat sd;
-extern MLX90614 mlx[MAX_MLX_SIZE];
+//extern MLX90614 mlx[MAX_MLX_SIZE];
 extern NMEAGPS gps;
 extern gps_fix fix_data;
 extern gps_fix fix_data_prev;
@@ -320,6 +339,9 @@ extern ELM327 myELM327;
 
 void initError(uint8_t);
 void eepromReload(void);
+void eepromLoadDefaults(void);
+void eepromSaveRunningValues(void);
+void eepromReset(void);
 int csvReadText(File *file, char *str, size_t size, char delim);
 int csvReadInt32(File *file, int32_t *num, char delim);
 int csvReadInt16(File *file, int16_t *num, char delim);
@@ -328,10 +350,11 @@ int csvReadUint16(File *file, uint16_t *num, char delim);
 int csvReadDouble(File *file, double *num, char delim);
 int csvReadFloat(File *file, float *num, char delim);
 void dateTimeSd(uint16_t *date, uint16_t *time);
-bool segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_lat, int32_t pos_prev_lon, int32_t trackLat1, int32_t trackLon1, int32_t trackLat2, int32_t trackLon2, int32_t &pos_cross_lat, int32_t &pos_cross_lon);
+boolean segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_lat, int32_t pos_prev_lon, int32_t trackLat1, int32_t trackLon1, int32_t trackLat2, int32_t trackLon2, int32_t &pos_cross_lat, int32_t &pos_cross_lon);
 float gpsDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2);
 void stopLaptimer(void);
-void startLaptimer(void);
+boolean startLaptimer(void);
+void showMessage(const char *label, uint8_t delay, uint8_t type);
 void sendUBX(const unsigned char *progmemBytes, size_t len);
 void timeAdd(float timeSecCsec, int32_t endSec, int32_t endCsec, int32_t &returnSec, int32_t &returnCsec);
 void timeSubstract(int32_t s1, int32_t cs1, int32_t s2, int32_t cs2, int32_t &returnSec, int32_t &returnCsec);
@@ -343,6 +366,9 @@ uint8_t configureADC(uint8_t bits);
 void showADCPortState(void);
 int16_t readAdcValue(uint8_t registerID);
 void readAdcValues(uint16_t anaValues[]);
+void formatAdcValues(uint16_t anaValues[]);
+void autodetectMlx(void);
+void mcp2EnableOneOutput(uint8_t idOutput);
 
 void SERCOM5_Handler(void);
 template <class T>
