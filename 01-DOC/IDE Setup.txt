@@ -1,26 +1,65 @@
-Install PlatformIO
+Download and install Visual Studio Code
+Open VSCode Extension Manager
+Search for official PlatformIO IDE extension
+Install PlatformIO IDE
 
-Edit file : C:\Users\dood\.platformio\packages\framework-arduino-samd\variants\arduino_mzero
-Remove lines :
-SERCOM5_Handler()
-Uart Serial( &sercom5, PIN_SERIAL_RX, PIN_SERIAL_TX, PAD_SERIAL_RX, PAD_SERIAL_TX ) ;
+In "Visual Studio Code", go to "PlatformIO/Miscellaneous/PlatformIO Core CLI/" and run :
+pio settings set projects_dir "/The/Github/directory/DAWA7/03-DEV"
 
-Change project directory in PlatformIO
-# pio settings set projects_dir "C:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects"
+Edit file : [...]\.platformio\packages\framework-arduino-samd\variants\arduino_mzero\variant.cpp
+Comment following lines :
+//Uart Serial( &sercom5, PIN_SERIAL_RX, PIN_SERIAL_TX, PAD_SERIAL_RX, PAD_SERIAL_TX ) ;
+//void SERCOM5_Handler()
+//{
+//  Serial.IrqHandler();
+//}
 
-Library Timelib
-Edit file : TimeLib.h
+Restart Visual Studio Code
+Open an existant project in PlateformIO
+
+
+
+The following changes are only for information as you already download the entire PlatformIO project
+
+#### Timelib Library ####
+>TimeLib.h
 Rename DAYS_PER_WEEK to DAYS_PER_WEEK_ALT
 
-Library FT800-FT813
-Edit file EVE_config.h
+#### FT800-FT813 Library ####
+> EVE_config.h
 l.104 : #define EVE_RiTFT43
 
-Rename "EVE_commands.c" to "EVE_commands.cpp"
+> EVE_commands.c
+Rename to "EVE_commands.cpp"
 
-Edit file tft.cpp
-l.232 > #if 0 > #if 1 // enable first time calibration, report values above (l.140)
+> tft.cpp
+Enable first time calibration, report values above (l.140)
+l.232 : #if 0 > #if 1 
 
-Edit file EVE_target.h
+> EVE_target.h
 #define EVE_CS 		13
 #define EVE_PDN		9
+
+#### NeoGPS Library ####
+> DMS.h
+Comment "class Print;"
+
+> NeoTime.h
+Comment "class Print;"
+
+https://github.com/SlashDevin/NeoGPS/pull/153/files
+
+> NeoTime.h
+static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR;
+static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
+
+> NMEAGPS_cfg.h
+uncomment #define NMEAGPS_PARSE_PROPRIETARY
+uncomment #define NMEAGPS_DERIVED_TYPES
+
+#### ELMDuino Library ####
+> ELMduino.cpp
+Replace all "Serial." by "DEBUG_PORT."
+
+> ELMduino.h
+Add at line 4 : "#define DEBUG_PORT SERIAL_PORT_USBVIRTUAL"

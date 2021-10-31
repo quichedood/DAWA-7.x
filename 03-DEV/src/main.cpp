@@ -1,8 +1,8 @@
 /**************************************************************
   DAWA 7.0 (Arduino M0 - Onboard SAMD21G)
   Bootloader have to be burned on new chip with for example Atmel ICE
-  Triumph motorbikes laptimer/datalogger
-  Edouard PIGEON - 2020
+  Motocycles laptimer/datalogger
+  Edouard PIGEON - 2021
 **************************************************************/
 
 /**************************************************************
@@ -12,40 +12,37 @@
   OK - Tester MLX
   OK - Tester valeurs sur carte SD
   OK - Régler variables vitesse
-  Pouvoir choisir Vgps ou Vcapteur
-  Calibration gear
-  Supprimer min/max analog inputs ?
-  Affichage running
-  Lister les circuits sur la carte SD
+  OK - Graphisme RPM
+  OK - Affichage running
+  OK - Calibration gear
+  Importer les circuits de la carte SD vers l'EEPROM
+  Lister les circuits sur l'EEPROM
   Lister l'historique des chronos
+  LED/Shiftlight (+param)
   Ajouter le nom du circuit aux noms de fichiers de log
-  Graphisme RPM
   Nommer les inputs
-  Teste sous forme de constante (verifier tout le code)
+  Pagination circuits
+  Optimisation code FT800
+  Texte sous forme de constante (verifier tout le code)
 
 **************************************************************/
 
-/**************************************************************
-  #################################################
-  ############## Includes definition ##############
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Includes ######################### *
+ * ################################################# *
+*****************************************************/
 
 #include <Arduino.h>           // Arduino library
 #include <SPI.h>               // SPI library
 #include <Wire.h>              // I2C library
 #include <extEEPROM.h>         // EEPROM library (http://github.com/PaoloP74/extEEPROM)
 #include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
-#include <Time.h>              // Time library
 #include <TimeLib.h>           // Time library (https://github.com/PaulStoffregen/Time)
-                               // In "TimeLib.h" > rename var "DAYS_PER_WEEK" to "DAYS_PER_WEEK_ALT" as the same var is already used in NeoGPS library
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
-#include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
-#include <dtostrf.h>           // Modified dtostrf function defnition (http://forum.arduino.cc/index.php?topic=368720.0)
+#include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/adafruit/Adafruit-MLX90614-Library)
 #include <NMEAGPS.h>           // NeoGPS library (https://github.com/SlashDevin/NeoGPS)
-                               // In "NeoTime.h" > static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR; static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
-                               // In NMEAGPS_cfg.h > uncomment #define NMEAGPS_PARSE_PROPRIETARY and #define NMEAGPS_DERIVED_TYPES
 #include <wiring_private.h>    // pinPeripheral() function, redefining SERCOM5 for serial port use
 #include <helper.h>            // DAWA functions helper
 #include <EVE_commands.h>      // EVE library
@@ -54,31 +51,20 @@
 /**************************************************************
   EEPROM library
 
-  extEEPROM.cpp >
-  Comment l.105/106 :
-  //communication->begin();
-  //communication->setClock(twiFreq);
-
-  Wire is already initialized before @400kHz
-
   EEPROM addresses used :
-  28 RPM Correction Ratio
-  29 RPM Flywheel Teeth
-  30 Enabled inputs bits (1x uint8_t)
-  31-32 Throttle max value (1x int16_t)
-  33-34 AnaOpt1 max value (1x int16_t)
-  35-36 AnaOpt2 max value (1x int16_t)
-  37-38 AnaOpt1 min value (1x int16_t)
-  39-40 AnaOpt2 min value (1x int16_t)
-  41-54 Gear calibration data (7x int16_t)
-  60-65 MLX I2C Address (6x uint8_t)
+  1 RPM Correction Ratio (1x uint8_t)
+  2 RPM Flywheel Teeth (1x uint8_t)
+  44-56 Gear calibration data (7x int16_t)
+  66 Enabled digital inputs (1x uint8_t)
+  67 Enabled analog inputs (1x uint8_t)
+  68-73 MLX I2C Address (6x uint8_t)
 **************************************************************/
 
-/**************************************************************
-  #############################################
-  ############## Vars definition ##############
-  #############################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Vars definition ################## *
+ * ################################################# *
+*****************************************************/
 
 // Inputs
 uint32_t inDigiSqrRpm;       // Digital square input (RPM)
@@ -111,51 +97,50 @@ uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary values, 
 uint8_t tmpComp, bitShift; // Used to compare values for enabled inputs checks
 
 uint16_t inAnaGearCalib[GEAR_CALIB_SIZE]; // Calibration values for GEAR input, each gear has a analogic value
-uint8_t gearNCheck = 0;
+uint8_t gearNCheck = 0;                   // Counter to check if gear is set to neutral
 
 // SD Card
-File logFile;     // One line every 100ms with all detailed data
-File lapFile;     // One line per lap with laptime
-File trackFile;   // One line per track with GPS coordinates of finish line
-File historyFile; // History of all sessions
-char filename[32];
+File logFile;      // One line every 100ms with all detailed data
+File lapFile;      // One line per lap with laptime
+File trackFile;    // One line per track with GPS coordinates of finish line
+File historyFile;  // History of all sessions
+char filename[32]; // Filename
 
 // GPS & Timing
-bool recordTrackData, addFinishLog, isRunning = false;
-char trackName[16];
-uint8_t lapCounter = 0;
+bool recordTrackData, addFinishLog, isRunning = false; // Boolean values to check multiple states
+char trackName[16];                                    // Track name
+uint8_t lapCounter = 0;                                // Lap count
 int16_t runMinutes, runSeconds;
 uint16_t trackId, lapId;
 int32_t timeCsec, timeSec, lastFlSec, lastFlCsec, lapSec, lapCsec, posCrossLat, posCrossLon, flineLat1, flineLon1, flineLat2, flineLon2; // Finish line GPS coordinates
 uint32_t lastPinRead = 0, lastOneSecSync = 0, lastSdSync = 0, fixCount = 0, elapsedTime = 0;
 float coordsDistance, totalDistance, tToFl; // Time To Finish Line
-uint8_t gpsFixStatus;
+uint8_t gpsFixStatus;                       // GPS signal quality status
 
-// Infrared temp sensor
+// Infrared temperature sensor
 uint8_t mlxAddresses[MAX_MLX_SIZE]; // Store each MLX I2C addresses
 double mlxValues[MAX_MLX_SIZE];     // Store MLX values
 
 // Analog to Digital converter (ADC)
-uint16_t anaValues[8];
-char anaValuesChar[8]; // Store value as a single character (useful for ANA1/GEAR : N,1,2,3 ...)
-uint16_t anaMinValues[8];
-uint16_t anaMaxValues[8];
-uint32_t digValues[4];
+uint16_t anaValues[8]; // All 8 measured analogic values
+char anaValuesChar[8]; // Analogic value converted to a single character (useful for ANA1/GEAR : N,1,2,3 ...)
+uint32_t digValues[4]; // All 4 measured digital values
 
 // RPM
-uint8_t rpmFlywheelTeeth;
-uint8_t rpmCorrectionRatio;
+uint8_t rpmFlywheelTeeth;   // Number of flywheel teeth (configurable through setup menu)
+uint8_t rpmCorrectionRatio; // RPM correction ratio (configurable through setup menu)
 
 // Buttons & menu
-bool fakeLap = false; // Used to simulate a new lap (debug)
-char msgLabel[255];
-uint8_t msgDelay = 0, msgType = 0;
+bool fakeLap = false;  // Used to simulate a new lap (debug)
+char msgLabel[255];    // Used to store on screen popup message
+uint32_t msgDelay = 0; // Number of ms the message is printed on screen
+uint8_t msgType = 0;   // Display type (color : green, red or grey)
 
 // TFT screen
-uint32_t lastTftTouchSync = 0;
-uint8_t lastTftPrintSync = 0;
-uint32_t currentMs;
-uint8_t tftScreenId = 10; // Default start screen
+uint32_t lastTftTouchSync = 0; // TFT refresh rate calculation
+uint8_t lastTftPrintSync = 0;  // TFT refresh rate calculation
+uint32_t currentMs;            // TFT refresh rate calculation
+uint8_t tftScreenId = 10;      // Default start screen ID
 
 #ifdef DEBUG
 uint32_t Now = 0;                 // used to calculate integration interval
@@ -165,11 +150,11 @@ uint32_t rpm = 0;
 uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration interval
 #endif
 
-/**************************************************************
-  #################################################
-  ############## Instantiate objects ##############
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Instantiate objects ############## *
+ * ################################################# *
+*****************************************************/
 
 // EEPROM
 extEEPROM eep(kbits_2, 1, 8); // I2C Address 0x50
@@ -190,19 +175,19 @@ gps_fix fix_data;
 gps_fix fix_data_prev;
 
 // GPS
-HardwareSerial &GPS_PORT = Serial5; // Use serial port for GPS
+HardwareSerial &GPS_PORT = Serial5; // Use Serial5 port for GPS
 
 // OBD2 serial port
-Uart OBD2_PORT(&sercom5, 7, 6, SERCOM_RX_PAD_3, UART_TX_PAD_2); // Use serial port for OBD2 - Disable SERCOM5 (Serial + Sercom5) in %localappdata%\Arduino15\packages\arduino\hardware\samd\1.8.9\variants\arduino_mzero\variant.cpp OR %username%\.platformio\packages\framework-arduino-samd\variants\arduino_mzero
+Uart OBD2_PORT(&sercom5, 7, 6, SERCOM_RX_PAD_3, UART_TX_PAD_2); // Use serial port for OBD2 - Disable SERCOM5 (Serial + Sercom5) in [...]\.platformio\packages\framework-arduino-samd\variants\arduino_mzero\variant.cpp
 
 // OBD2 ELMduino object
 ELM327 myELM327;
 
-/**************************************************************
-  #################################################
-  ############## Initialisation ###################
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Init./Setup ###################### *
+ * ################################################# *
+*****************************************************/
 
 void setup()
 {
@@ -308,7 +293,7 @@ void setup()
   /**************************************************************
     SD card Init (SPI)
   **************************************************************/
-  if (!sd.begin(sdCsPin, SD_SCK_MHZ(50)))
+  if (!sd.begin(sdCsPin, SD_SCK_MHZ(12)))
   {
 #ifdef DEBUG
     DEBUG_PORT.print(LABEL_SD);
@@ -352,7 +337,7 @@ void setup()
     MLX Init (I2C)
   **************************************************************/
   // Read infrared temp sensors I2C Address from EEPROM (MAX_MLX_SIZE x 8 bits)
-  EEPROM_readAnything(50, mlxAddresses) == sizeof(mlxAddresses);
+  EEPROM_readAnything(68, mlxAddresses) == sizeof(mlxAddresses);
   for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
   {
     if (mlxAddresses[i] != 0x00)
@@ -389,15 +374,14 @@ void setup()
   sendUBX(ubxPrtConf, sizeof(ubxPrtConf)); // Set UART speed to 115200bps (Warning : @9600bps > ~5sec delay on GPS data)
   delay(100);
   GPS_PORT.end();
-  GPS_PORT.begin(115200);                      // Start the UART @115200bps
-  sendUBX(ubxRate10Hz, sizeof(ubxRate10Hz));   // Set refresh rate to 10Hz
-  sendUBX(ubxTimepulse, sizeof(ubxTimepulse)); // Set timepulse output ON
-  sendUBX(ubxEnableRMC, sizeof(ubxEnableRMC)); // Enable RMC trames, disable all others
-  sendUBX(ubxDisableGLL, sizeof(ubxDisableGLL));
+  GPS_PORT.begin(115200);                        // Start the UART @115200bps
+  sendUBX(ubxRate10Hz, sizeof(ubxRate10Hz));     // Set refresh rate to 10Hz
+  sendUBX(ubxDisableGLL, sizeof(ubxDisableGLL)); // Disable unused frames
   sendUBX(ubxDisableGSA, sizeof(ubxDisableGSA));
   sendUBX(ubxDisableGSV, sizeof(ubxDisableGSV));
   sendUBX(ubxDisableVTG, sizeof(ubxDisableVTG));
   sendUBX(ubxDisableZDA, sizeof(ubxDisableZDA));
+
 #ifdef DEBUG
   DEBUG_PORT.print(LABEL_GPS);
   DEBUG_PORT.print(F(" : "));
@@ -501,11 +485,11 @@ void setup()
 #endif
 }
 
-/**************************************************************
-  #################################################
-  ############## Main loop ###################
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Main loop ######################## *
+ * ################################################# *
+*****************************************************/
 
 void loop()
 {
@@ -539,7 +523,7 @@ void loop()
     elapsedTime = millis() - lastPinRead; // Used to have precise measures on RPM and SPEED
     lastPinRead = millis();               // Reset last pin read
 
-    bitShift = B00000001;
+    bitShift = 0b00000001;
     for (uint8_t i = 0; i < 4; i++)
     { // Read values of enabled inputs only
       tmpComp = bitShift & enDigitalInputsBits;
@@ -560,7 +544,7 @@ void loop()
             ;                                                                                      // Wait for synchronization
           digValues[i] = digValues[i] * rpmCorrectionRatio * 600 / elapsedTime / rpmFlywheelTeeth; // Ratio between pulse and rpm (22 > flywheel has 22 teeth ### 600 > with check every 100ms, RPM is by minute) ### rpmCorrectionRatio > *(100+corr) / elapsedTime) > if we read counter @101ms or 102ms values should be adjusted
           break;
-        // bit 1 : SQR1/SPEED;
+        // bit 1 : SQR1;
         case 1:
           REG_TCC0_CTRLBSET = TCC_CTRLBSET_CMD_READSYNC; // Trigger a read synchronization on the COUNT register
           while (TCC0->SYNCBUSY.bit.CTRLB)
@@ -589,7 +573,7 @@ void loop()
     /**************************************************************
       Read analog enabled INPUTS
     **************************************************************/
-    readAdcValues(anaValues); // Takes time to read all values (one voltage conversion = 12.2ms !)
+    readAdcValues(anaValues); // It takes time to read all values (one voltage conversion = 12.2ms !)
     formatAdcValues(anaValues);
 
     /**************************************************************
@@ -614,7 +598,7 @@ void loop()
       lastOneSecSync = fixCount;
 #ifdef DEBUG
       DEBUG_PORT.print("rate = ");
-      DEBUG_PORT.print((float)sumCount / sum, 2);
+      DEBUG_PORT.print((float)sumCount / sum, 0);
       DEBUG_PORT.println(" Hz");
       sumCount = 0;
       sum = 0;
@@ -628,21 +612,6 @@ void loop()
         DEBUG_PORT.print("RPM: NS "); DEBUG_PORT.println(myELM327.status);
       }*/
 #endif
-
-      /**************************************************************
-        If there is a message printed on screen, remove it after specified delay
-      **************************************************************/
-      if (msgLabel != "")
-      {
-        if (msgDelay == 0)
-        {
-          strcpy(msgLabel, "");
-        }
-        else
-        {
-          msgDelay--;
-        }
-      }
 
       /**************************************************************
         Read and store MLX temperature in array
@@ -767,7 +736,7 @@ void loop()
       logFile.print(F(";"));
 
       // Digital inputs (printed if enabled)
-      bitShift = B00000001;
+      bitShift = 0b00000001;
       for (uint8_t i = 0; i < 4; i++)
       {
         tmpComp = bitShift & enDigitalInputsBits;
@@ -780,13 +749,20 @@ void loop()
       }
 
       // Analog inputs (printed if enabled)
-      bitShift = B00000001;
+      bitShift = 0b00000001;
       for (uint8_t i = 0; i < 8; i++)
       {
         tmpComp = bitShift & enAnalogInputsBits;
         if (tmpComp == bitShift)
         {
-          logFile.print(anaValues[i]);
+          if (i == 0) // ANA1/GEAR
+          {
+            logFile.print(anaValuesChar[i]);
+          }
+          else
+          {
+            logFile.print(anaValues[i]);
+          }
           logFile.print(F(";"));
         }
         bitShift = bitShift << 1;
@@ -827,6 +803,7 @@ void loop()
         Do something else when laptimer IS NOT running
       **************************************************************/
       // Do what you want :)
+      // You could check the refresh rate of the main loop when enabling debug mode (now it's approximately : 38000Hz)
     }
   }
 

@@ -2,45 +2,37 @@
 #define HELPER_H_
 
 /**************************************************************
-  ##################################################
-  ############## constants definition ##############
-  ##################################################
-**************************************************************/
-/**************************************************************
   Debug to serial
   Also used by NeoGPS library
 **************************************************************/
-#define DEBUG // /!\ DAWA will wait serial connection to start
-
+//#define DEBUG // /!\ DAWA will wait serial connection to start
 #ifdef DEBUG
 #define DEBUG_PORT SERIAL_PORT_USBVIRTUAL
 #endif
 
+/*****************************************************
+ * ################################################# *
+ * ############## Constants definition ############# *
+ * ################################################# *
+*****************************************************/
 
-// Screen design
-#define TFTDEFAULTFONTCOLOR 0xffffffUL
-
-// Array size
-#define GEAR_CALIB_SIZE  7
-#define MAX_MLX_SIZE  6 // Max MLX chips that could be declared (could be more but need to add object instances, just before setup())
-#define FIRST_MLX_ADDRESS 0x01 // First given MLX I2C address (then +1 on each discovered MLX sensor)
-#define DEFAULT_GEARCALIB_VALUE 250
-#define GEAR_OFFSET 200 // Each gear has a corresponding value, this value define the interval (value - GEAR_OFFSET < measure < value + GEAR_OFFSET)       
-#define DEFAULT_ENDIGITALINPUTSBITS_VALUE 0b00001111
-#define DEFAULT_ENANALOGINPUTSBITS_VALUE 0b00001111
-
-#define DEFAULT_RPM_CORRECTION_RATIO 105
-#define DEFAULT_RPM_FLYWHEEL_TEETH 22
-
-#define DEFAULT_ANA_MIN_VALUE 0
-#define DEFAULT_ANA_MAX_VALUE 4095 // 4095 = value at 5v
-
+#define TFTDEFAULTFONTCOLOR 0xffffffUL               // TFT default font color
+#define GEAR_CALIB_SIZE 7                            // How many gears we have
+#define MAX_MLX_SIZE 6                               // Max MLX chips that could be declared (could be more but need to add object instances, just before setup())
+#define FIRST_MLX_ADDRESS 0x01                       // First allocated MLX I2C address (then +1 on each discovered MLX sensor)
+#define GEAR_OFFSET 200                              // Each gear has a corresponding value, this value define the interval (value - GEAR_OFFSET < measure < value + GEAR_OFFSET)
+#define DEFAULT_ENDIGITALINPUTSBITS_VALUE 0b00001111 // Default enabled digital inputs
+#define DEFAULT_ENANALOGINPUTSBITS_VALUE 0b00001111  // Default enabled analog inputs
+#define DEFAULT_RPM_CORRECTION_RATIO 105             // RPM correction ratio (100 = no correction, 105 = x 1.05)
+#define DEFAULT_RPM_FLYWHEEL_TEETH 22                // Flywheel teeth (Triumph Daytona = 22)
+#define MAX_TRACK_DISTANCE 5                         // Autoselect nearest track (unit = km)
 #define TFT_DEFAULT_BORDER_H_SIZE 5
 #define TFT_DEFAULT_BORDER_V_SIZE 1
 #define TFT_BUTTON_BORDER_SIZE 5
 #define TFT_BUTTON_H_SIZE 80
 #define TFT_BUTTON_H2_SIZE 160
 #define TFT_BUTTON_H3_SIZE 20
+#define TFT_BUTTON_H4_SIZE 60
 #define TFT_BUTTON_V_SIZE 30
 #define TFT_BUTTON_V3_SIZE 20
 #define TFT_BUTTON_H_SPACE 10
@@ -55,50 +47,40 @@
 #define TFT_FONT_03_V_SPACE 75
 
 // I/O Pins
-constexpr uint8_t inDigiBrakePin = 3;    // D3, digital input
-constexpr uint8_t inDigiOpt1Pin = 11;    // D11, digital input
-constexpr uint8_t inAnaThrottlePin = A5; // A5, analog input
-constexpr uint8_t inAnaGearPin = A2;     // A2, analog input
-constexpr uint8_t inAnaOpt1Pin = A3;     // A3, analog input
-constexpr uint8_t inAnaOpt2Pin = A4;     // A4, analog input
-constexpr uint8_t sdCsPin = 5;           // D5, Chip Select for SDCARD on SPI bus
-constexpr uint8_t mcp1Led1 = 8;           // Led 1 on MCP23017
-constexpr uint8_t mcp1Led2 = 9;           // Led 2 on MCP23017
-constexpr uint8_t mcp1Led3 = 10;          // Led 3 on MCP23017
-constexpr uint8_t mcp1Led4 = 11;          // Led 4 on MCP23017
-constexpr uint8_t mcp1Led5 = 12;          // Led 5 on MCP23017
-constexpr uint8_t mcp1Led6 = 13;          // Led 6 on MCP23017
-constexpr uint8_t mcp1Led7 = 14;          // Led 7 on MCP23017
-constexpr uint8_t mcp1Led8 = 15;          // Led 8 on MCP23017
-constexpr uint8_t powerState = A1;       // A1, power switch state (set 0 to power off)
+constexpr uint8_t inDigiBrakePin = 3; // D3, digital input
+constexpr uint8_t inDigiOpt1Pin = 11; // D11, digital input
+constexpr uint8_t sdCsPin = 5;        // D5, Chip Select for SDCARD on SPI bus
+constexpr uint8_t mcp1Led1 = 8;       // Led 1 on MCP23017
+constexpr uint8_t mcp1Led2 = 9;       // Led 2 on MCP23017
+constexpr uint8_t mcp1Led3 = 10;      // Led 3 on MCP23017
+constexpr uint8_t mcp1Led4 = 11;      // Led 4 on MCP23017
+constexpr uint8_t mcp1Led5 = 12;      // Led 5 on MCP23017
+constexpr uint8_t mcp1Led6 = 13;      // Led 6 on MCP23017
+constexpr uint8_t mcp1Led7 = 14;      // Led 7 on MCP23017
+constexpr uint8_t mcp1Led8 = 15;      // Led 8 on MCP23017
+constexpr uint8_t powerState = A1;    // A1, power switch state (set 0 to power off)
 
 // Others ...
-constexpr char csvDelim = ';';            // CSV file delimiter
-constexpr uint8_t maxTrackDistance = 5;   // Autoselect nearest track (unit = km)
-
-constexpr uint8_t maxHomepageScreens = 4; // The number of defined homepage screens
+constexpr char csvDelim = ';'; // CSV file delimiter
 
 // GPS & Timing
 constexpr float rescaleGPS = 10000000.0; // We use "long" for GPS coordinates to keep precision ("float" on Arduino have only 6 decimal digits of precision) ### https://gis.stackexchange.com/questions/8650/measuring-accuracy-of-latitude-and-longitude
 
 // GPS Configuration - General
-// constexpr unsigned char ubxSave[] PROGMEM = {0x06, 0x09, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x01}; // No EEPROM => Backup battery
 constexpr unsigned char ubxRate10Hz[] PROGMEM = {0x06, 0x08, 0x06, 0x00, 0x64, 0x00, 0x01, 0x00, 0x01, 0x00};
-constexpr unsigned char ubxTimepulse[] PROGMEM = {0x06, 0x31, 0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x29, 0x00, 0x00, 0x00};
-//                                               |ID         |Lenght     |TP   |res  |res        |antCableD  |rfGrDelay  |freqPeriod             |freqPeriod lock        |Pulselenghtratio       |Pulselenghtratiolock   |UserConfigDelay        |Flags                 |
 constexpr unsigned char ubxPrtConf[] PROGMEM = {0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xd0, 0x08, 0x00, 0x00, 0x00, 0xc2, 0x01, 0x00, 0x07, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00}; // 115200bps
 //                                             |ID         |Lenght     |Port |res  |TX Ready   |mode                   |baudrate               |inPrMask   |outPrMask  |flags      |res       |
 
 // GPS Configuration - Enable/disable specific NMEA sentences
-constexpr unsigned char ubxEnableRMC[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};
-constexpr unsigned char ubxDisableGLL[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-constexpr unsigned char ubxDisableGSA[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-constexpr unsigned char ubxDisableGSV[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-constexpr unsigned char ubxDisableVTG[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-constexpr unsigned char ubxDisableZDA[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+const unsigned char ubxDisableGGA[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableGLL[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableGSA[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableGSV[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableRMC[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableVTG[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+const unsigned char ubxDisableZDA[] PROGMEM = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
 
 // Set these values to the offset of your timezone from GMT
-
 constexpr int32_t zone_hours = +1L;  // EST
 constexpr int32_t zone_minutes = 0L; // usually zero
 constexpr NeoGPS::clock_t zone_offset =
@@ -151,10 +133,10 @@ constexpr static char MENU_DEFAULT_EEPROM[] PROGMEM = "DEFAULT";
 constexpr static char MENU_BACK[] PROGMEM = "BACK";
 constexpr static char MENU_AUTODETECT_MLX[] PROGMEM = "AUTO DETECT";
 
-
 constexpr static char LABEL_DEBUG_IS_ENABLED[] PROGMEM = "DEBUG is enabled";
 constexpr static char LABEL_DAWA_INIT[] PROGMEM = "D.A.W.A. Init ...";
 constexpr static char LABEL_OK[] PROGMEM = "OK";
+constexpr static char LABEL_OFF[] PROGMEM = "OFF";
 constexpr static char LABEL_FAILED[] PROGMEM = "FAILED";
 constexpr static char LABEL_BLE[] PROGMEM = "BLUETOOTH";
 constexpr static char LABEL_OLED[] PROGMEM = "OLED";
@@ -225,27 +207,28 @@ constexpr static char LABEL_NEW_SESSION[] PROGMEM = "[Start new session !]";
 constexpr static char LABEL_END_SESSION[] PROGMEM = "[Session stopped !]";
 constexpr static char LABEL_NO_GPS_SIGNAL[] PROGMEM = "No valid GPS signal !";
 constexpr static char LABEL_RUN_AS_DATALOGGER[] PROGMEM = "No track file, run as datalogger only";
-
+constexpr static char LABEL_GEAR_CALIBRATION[] PROGMEM = "Set gear to ";
+constexpr static char LABEL_GEAR_CALIBRATION_OK[] PROGMEM = "Gears calibrated !";
 
 const char *const digitalInputsLabel[] = {"RPM", "SQR1", "DIG1", "DIG2"};
 const char *const analogInputsLabel[] = {"GEAR", "ANA2", "ANA3", "ANA4", "ANA5", "ANA6", "ANA7", "ANA8"};
-const char gearName[] = {'N', '1', '2', '3', '4', '5', '6'}; 
+const char gearName[] = {'N', '1', '2', '3', '4', '5', '6'};
 
-/**************************************************************
-  #############################################
-  ############## Vars definition ##############
-  #############################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Vars definition ################## *
+ * ################################################# *
+*****************************************************/
 
 // Inputs
-extern uint32_t inDigiSqrRpm;     // Digital square input (RPM)
-extern uint32_t inDigiSqrOpt1;    // Digital square input (optional)
-extern bool inDigiBrake;          // Digital boolean input (brake)
-extern bool inDigiOpt1;           // Digital boolean input (optional)
-extern uint16_t inAnaGear;        // Digital analog input (GEAR)
-extern uint16_t inAnaThrottle;    // Digital analog input (THROTTLE)
-extern uint16_t inAnaOpt1;        // Digital analog input (optional)
-extern uint16_t inAnaOpt2;        // Digital analog input (optional)
+extern uint32_t inDigiSqrRpm;       // Digital square input (RPM)
+extern uint32_t inDigiSqrOpt1;      // Digital square input (optional)
+extern bool inDigiBrake;            // Digital boolean input (brake)
+extern bool inDigiOpt1;             // Digital boolean input (optional)
+extern uint16_t inAnaGear;          // Digital analog input (GEAR)
+extern uint16_t inAnaThrottle;      // Digital analog input (THROTTLE)
+extern uint16_t inAnaOpt1;          // Digital analog input (optional)
+extern uint16_t inAnaOpt2;          // Digital analog input (optional)
 extern uint8_t enDigitalInputsBits; // Store enabled digital inputs (use binary values, ex : 10100000 > DIGI_SQR_RPM and DIGI_BRAKE enabled)
 // BIT 0 = DIGI_SQR_RPM
 // BIT 1 = DIGI_SQR_OPT_1
@@ -290,8 +273,6 @@ extern uint8_t gpsFixStatus;
 // Analog to Digital converter (ADC)
 extern uint16_t anaValues[8];
 extern char anaValuesChar[8]; // Store value as a single character (useful for ANA1/GEAR : N,1,2,3 ...)
-extern uint16_t anaMinValues[8];
-extern uint16_t anaMaxValues[8];
 extern uint32_t digValues[4];
 
 // Infrared temp sensor
@@ -302,10 +283,14 @@ extern double mlxValues[MAX_MLX_SIZE];     // Store MLX values
 extern uint8_t rpmFlywheelTeeth;
 extern uint8_t rpmCorrectionRatio;
 
+// Speed
+//extern uint8_t getSpeedFromGps;
+
 // Buttons & menu
-extern bool fakeLap;                     // Used to simulate a new lap (first left button when laptimer running)
+extern bool fakeLap; // Used to simulate a new lap (first left button when laptimer running)
 extern char msgLabel[255];
-extern uint8_t msgDelay, msgType;
+extern uint32_t msgDelay;
+extern uint8_t msgType;
 
 // TFT screen
 extern uint32_t lastTftTouchSync;
@@ -313,29 +298,41 @@ extern uint8_t lastTftPrintSync;
 extern uint32_t currentMs;
 extern uint8_t tftScreenId; // Which screen is printed (0 = start page) / defined as "extern uint8_t" in tft.cpp
 
-/**************************************************************
-  #################################################
-  ############## Instantiate objects ##############
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Instantiate objects ############## *
+ * ################################################# *
+*****************************************************/
 
+// EEPROM
 extern extEEPROM eep;
+
+// I/O Expander MCP23017
 extern Adafruit_MCP23017 MCP1;
 extern Adafruit_MCP23017 MCP2;
+
+// SD Card
 extern SdFat sd;
-//extern MLX90614 mlx[MAX_MLX_SIZE];
+
+// GPS
 extern NMEAGPS gps;
 extern gps_fix fix_data;
 extern gps_fix fix_data_prev;
+
+// GPS
 extern HardwareSerial &GPS_PORT;
+
+// OBD2 serial port
 extern Uart OBD2_PORT;
+
+// OBD2 ELMduino object
 extern ELM327 myELM327;
 
-/**************************************************************
-  #################################################
-  ############## Functions##### ###################
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Functions ######################## *
+ * ################################################# *
+*****************************************************/
 
 void initError(uint8_t);
 void eepromReload(void);
@@ -354,19 +351,19 @@ boolean segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_
 float gpsDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2);
 void stopLaptimer(void);
 boolean startLaptimer(void);
-void showMessage(const char *label, uint8_t delay, uint8_t type);
+void showMessage(const char *label, uint32_t delay, uint8_t type);
 void sendUBX(const unsigned char *progmemBytes, size_t len);
 void timeAdd(float timeSecCsec, int32_t endSec, int32_t endCsec, int32_t &returnSec, int32_t &returnCsec);
 void timeSubstract(int32_t s1, int32_t cs1, int32_t s2, int32_t cs2, int32_t &returnSec, int32_t &returnCsec);
 void adjustTime(NeoGPS::time_t &dt);
 
-
 uint8_t initADC(void);
 uint8_t configureADC(uint8_t bits);
 void showADCPortState(void);
-int16_t readAdcValue(uint8_t registerID);
+uint16_t readAdcValue(uint8_t registerID);
 void readAdcValues(uint16_t anaValues[]);
 void formatAdcValues(uint16_t anaValues[]);
+void gearCalibration(void);
 void autodetectMlx(void);
 void mcp2EnableOneOutput(uint8_t idOutput);
 

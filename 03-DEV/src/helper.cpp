@@ -1,17 +1,24 @@
+/*****************************************************
+ * ################################################# *
+ * ############## Includes ######################### *
+ * ################################################# *
+*****************************************************/
+
 #include <Arduino.h>           // Arduino library
 #include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
-#include <Adafruit_MLX90614.h> //MLX90614 Infrared temperature sensor (https://github.com/jfitter/MLX90614)
+#include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/adafruit/Adafruit-MLX90614-Library)
 #include <NMEAGPS.h>           // NeoGPS library (https://github.com/SlashDevin/NeoGPS) - In "NeoTime.h" > static const uint16_t s_epoch_year = POSIX_EPOCH_YEAR; static const uint8_t  s_epoch_weekday = POSIX_EPOCH_WEEKDAY;
 #include <extEEPROM.h>         // EEPROM library (http://github.com/PaoloP74/extEEPROM)
 #include <helper.h>            // DAWA functions helper
+#include <tft.h>               // EVE library Rudolph Riedel FT800-FT813 (https://github.com/RudolphRiedel/FT800-FT813)
 
-/**************************************************************
-  #################################################
-  ############## Functions##### ###################
-  #################################################
-**************************************************************/
+/*****************************************************
+ * ################################################# *
+ * ############## Functions ######################## *
+ * ################################################# *
+*****************************************************/
 
 /**************************************************************
   #initError > Error code on 8 bits (1 > 255)
@@ -77,24 +84,11 @@ void eepromLoadDefaults(void)
   EEPROM_writeAnything(0, (uint8_t)DEFAULT_RPM_CORRECTION_RATIO) == sizeof(rpmCorrectionRatio);
   EEPROM_writeAnything(1, (uint8_t)DEFAULT_RPM_FLYWHEEL_TEETH) == sizeof(rpmFlywheelTeeth);
 
-  // Write default min/max values for analogic inputs (16 x 16 bits)
-  for (uint8_t i = 0; i < 8; i++)
-  {
-    EEPROM_writeAnything(2 + (4 * i), DEFAULT_ANA_MIN_VALUE) == sizeof(anaMinValues[i]);
-    EEPROM_writeAnything(4 + (4 * i), DEFAULT_ANA_MAX_VALUE) == sizeof(anaMaxValues[i]);
-  }
-
-  // Write GEAR (ANA1) calibration data (GEAR_CALIB_SIZE x 16 bits)
-  for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
-  {
-    EEPROM_writeAnything(34 + (2 * i), DEFAULT_GEARCALIB_VALUE + (i * 500)) == sizeof(inAnaGearCalib[i]);
-  }
-
   // Write enabled digital inputs (8 bits)
-  EEPROM_writeAnything(56, DEFAULT_ENDIGITALINPUTSBITS_VALUE) == sizeof(enDigitalInputsBits);
+  EEPROM_writeAnything(66, DEFAULT_ENDIGITALINPUTSBITS_VALUE) == sizeof(enDigitalInputsBits);
 
   // Write enabled analog inputs (8 bits)
-  EEPROM_writeAnything(57, DEFAULT_ENANALOGINPUTSBITS_VALUE) == sizeof(enAnalogInputsBits);
+  EEPROM_writeAnything(67, DEFAULT_ENANALOGINPUTSBITS_VALUE) == sizeof(enAnalogInputsBits);
 }
 
 /**************************************************************
@@ -127,24 +121,17 @@ void eepromReload(void)
   EEPROM_readAnything(0, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
   EEPROM_readAnything(1, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
 
-  // Read min/max values for analogic inputs (16 x 16 bits)
-  for (uint8_t i = 0; i < 8; i++)
-  {
-    EEPROM_readAnything(2 + (4 * i), anaMinValues[i]) == sizeof(anaMinValues[i]);
-    EEPROM_readAnything(4 + (4 * i), anaMaxValues[i]) == sizeof(anaMaxValues[i]);
-  }
-
   // Read GEAR (ANA1) calibration data (GEAR_CALIB_SIZE x 16 bits)
   for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
   {
-    EEPROM_readAnything(34 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
+    EEPROM_readAnything(44 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
   }
 
   // Read enabled digital inputs (8 bits)
-  EEPROM_readAnything(56, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
+  EEPROM_readAnything(66, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
 
   // Read enabled analog inputs (8 bits)
-  EEPROM_readAnything(57, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
+  EEPROM_readAnything(67, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
 }
 
 /**************************************************************
@@ -157,7 +144,7 @@ void eepromReload(void)
   size - Size of str array.
   delim - csv delimiter.
   return - negative value for failure.
-        delimiter, '\n' or zero(EOF) for success.
+  delimiter, '\n' or zero(EOF) for success.
 **************************************************************/
 int csvReadText(File *file, char *str, size_t size, char delim)
 {
@@ -376,7 +363,7 @@ void stopLaptimer(void)
 **************************************************************/
 boolean startLaptimer(void)
 {
-  uint8_t bitShift = B00000001, tmpComp;
+  uint8_t bitShift = 0b00000001, tmpComp;
   SdFile::dateTimeCallback(dateTimeSd);
   if (fix_data.valid.location) // We need GPS fix before starting
   {
@@ -400,16 +387,9 @@ boolean startLaptimer(void)
         coordsDistance = gpsDistance(fix_data.latitudeL(), fix_data.longitudeL(), flineLat1, flineLon1) / 1000;
 
         // If you are on a known track, then we select it
-        if (coordsDistance <= maxTrackDistance)
+        if (coordsDistance <= MAX_TRACK_DISTANCE)
         {
           recordTrackData = true;
-#ifdef DEBUG
-          DEBUG_PORT.print("Track : ");
-          DEBUG_PORT.print(trackName);
-          DEBUG_PORT.print(" (");
-          DEBUG_PORT.print(coordsDistance);
-          DEBUG_PORT.println("km)");
-#endif
           break; // Break here so last read values are the good ones !
         }
       }
@@ -449,7 +429,7 @@ boolean startLaptimer(void)
       }
       else
       {
-        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
         return 1;
       }
 
@@ -466,7 +446,7 @@ boolean startLaptimer(void)
         logFile.print(LABEL_LOG_HEADER_2);
 
         // Digital inputs (printed if enabled)
-        bitShift = B00000001;
+        bitShift = 0b00000001;
         for (uint8_t i = 0; i < 4; i++)
         {
           tmpComp = bitShift & enDigitalInputsBits;
@@ -479,7 +459,7 @@ boolean startLaptimer(void)
         }
 
         // Analog inputs (printed if enabled)
-        bitShift = B00000001;
+        bitShift = 0b00000001;
         for (uint8_t i = 0; i < 8; i++)
         {
           tmpComp = bitShift & enAnalogInputsBits;
@@ -507,7 +487,7 @@ boolean startLaptimer(void)
       }
       else
       {
-        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
         return 1;
       }
 
@@ -521,7 +501,7 @@ boolean startLaptimer(void)
       }
       else
       {
-        showMessage(LABEL_LOG_FILEERROR, 2, 2);
+        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
         return 1;
       }
 
@@ -538,13 +518,13 @@ boolean startLaptimer(void)
     else
     {
       // Run as data acquisition only (no laptimer because no track found)
-      showMessage(LABEL_RUN_AS_DATALOGGER, 2, 1);
+      showMessage(LABEL_RUN_AS_DATALOGGER, 2000, 1);
       return 0;
     }
   }
   else
   {
-    showMessage(LABEL_NO_GPS_SIGNAL, 2, 2);
+    showMessage(LABEL_NO_GPS_SIGNAL, 2000, 2);
     return 1;
   }
   return 0;
@@ -553,10 +533,10 @@ boolean startLaptimer(void)
 /**************************************************************
   #showMessage > Print message on TFT
 **************************************************************/
-void showMessage(const char *label, uint8_t delay, uint8_t type)
+void showMessage(const char *label, uint32_t delay, uint8_t type)
 {
   strcpy(msgLabel, label);
-  msgDelay = delay;
+  msgDelay = millis() + delay;
   msgType = type;
 }
 
@@ -700,7 +680,7 @@ uint8_t configureADC(uint8_t bits)
 /**************************************************************
   #readAdcValue > Read one specific ADC value
 **************************************************************/
-int16_t readAdcValue(uint8_t registerID)
+uint16_t readAdcValue(uint8_t registerID)
 {
   Wire.beginTransmission(0x1D); // Talk to ADC128D818 - A0 and A1 to GND
   Wire.write(registerID);       // Busy Status Register (Bit 1 = Not Ready > Waiting for the power-up sequence to end)
@@ -708,7 +688,9 @@ int16_t readAdcValue(uint8_t registerID)
   Wire.requestFrom(0x1D, 2); // Read Register 0x20
   if (Wire.available() == 2)
   {
-    return (Wire.read() << 4 | Wire.read()); // We read a 12 bits value (2x 8 bits I2C reads)
+    uint8_t high_byte = Wire.read();
+    uint8_t low_byte = Wire.read();
+    return (((((uint16_t)high_byte) << 8) | ((uint16_t)low_byte)) & 0xFFF0) >> 4; // We read a 12 bits value (2x 8 bits I2C reads)
   }
   return -1;
 }
@@ -719,7 +701,7 @@ int16_t readAdcValue(uint8_t registerID)
 **************************************************************/
 void readAdcValues(uint16_t anaValues[])
 {
-  uint8_t bitShift = B00000001, tmpComp;
+  uint8_t bitShift = 0b00000001, tmpComp;
   uint8_t registerID = 0x20; // First register ID is 0x20
   for (uint8_t i = 0; i < 8; i++)
   {
@@ -743,7 +725,7 @@ void readAdcValues(uint16_t anaValues[])
 **************************************************************/
 void formatAdcValues(uint16_t anaValues[])
 {
-  uint8_t bitShift = B00000001, tmpComp;
+  uint8_t bitShift = 0b00000001, tmpComp;
   for (uint8_t i = 0; i < 8; i++)
   {
     tmpComp = bitShift & enAnalogInputsBits;
@@ -769,81 +751,36 @@ void formatAdcValues(uint16_t anaValues[])
           }
         }
         // If condition is never true, last gear value is printed
-
-        /*
-        anaValuesChar[i] = 'N';
-        if (anaValues[i] <= inAnaGearCalib[1] + gearOffset)
-        {
-          anaValuesChar[i] = '1';
-        }
-        if (anaValues[i] > inAnaGearCalib[2] - gearOffset && anaValues[i] <= inAnaGearCalib[2] + gearOffset)
-        {
-          anaValuesChar[i] = '2';
-        }
-        if (anaValues[i] > inAnaGearCalib[3] - gearOffset && anaValues[i] <= inAnaGearCalib[3] + gearOffset)
-        {
-          anaValuesChar[i] = '3';
-        }
-        if (anaValues[i] > inAnaGearCalib[4] - gearOffset && anaValues[i] <= inAnaGearCalib[4] + gearOffset)
-        {
-          anaValuesChar[i] = '4';
-        }
-        if (anaValues[i] > inAnaGearCalib[5] - gearOffset && anaValues[i] <= inAnaGearCalib[5] + gearOffset)
-        {
-          anaValuesChar[i] = '5';
-        }
-        if (anaValues[i] > inAnaGearCalib[6] - gearOffset && anaValues[i] <= inAnaGearCalib[6] + gearOffset)
-        {
-          anaValuesChar[i] = '6';
-        }
-        if (anaValues[i] > inAnaGearCalib[0] - gearOffset && anaValues[i] <= inAnaGearCalib[0] + gearOffset)
-        {
-          if (gearNCheck > 3)
-          { // We test 3 times to prevent displaying "N" between 2 gears
-            anaValuesChar[i] = 'N';
-          }
-          else
-          {
-            gearNCheck++;
-          }
-        }
-        else
-        {
-          gearNCheck = 0;
-        }*/
         break;
-      // bit 1 : Analog 2
-      case 1:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 2 : Analog 3
-      case 2:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 3 : Analog 4
-      case 3:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 4 : Analog 5
-      case 4:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 5 : Analog 6
-      case 5:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 6 : Analog 7
-      case 6:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
-        break;
-      // bit 7 : Analog 8
-      case 7:
-        anaValues[i] = constrain(map(anaValues[i], anaMinValues[i], anaMaxValues[i], 0, 2047), 0, 2047);
+      // bit 1 to 7 : Analog 2 to 8 (all of the others except ANA1/GEAR)
+      default:
+        anaValues[i] = map(anaValues[i], 0, 4096, 0, 100);
         break;
       }
     }
     bitShift = bitShift << 1;
   }
+}
+
+/**************************************************************
+  #gearCalibration > Calibrate gear (values for each gear)
+**************************************************************/
+void gearCalibration(void)
+{
+  char bufferMsg[13];
+  char bufferGear[1];
+  for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
+  {
+    sprintf(bufferGear, "%c", gearName[i]);
+    strcpy(bufferMsg, LABEL_GEAR_CALIBRATION);
+    strcat(bufferMsg, bufferGear);
+    showMessage(bufferMsg, 3000, 0);
+    TFT_display(); // Refresh TFT to print message
+    delay(3000);
+    inAnaGearCalib[i] = readAdcValue(0x20); // 0x20 is first register (ANA1/GEAR)
+    EEPROM_writeAnything(44 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
+  }
+  showMessage(LABEL_GEAR_CALIBRATION_OK, 2000, 1);
 }
 
 /**************************************************************
@@ -884,7 +821,7 @@ void autodetectMlx(void)
       mlxId++;
     }
   }
-  if (EEPROM_writeAnything(50, mlxAddresses) == sizeof(mlxAddresses))
+  if (EEPROM_writeAnything(68, mlxAddresses) == sizeof(mlxAddresses))
   { // Write array of addresses on EEPROM
     //OUT_PORT.print(mlxId); OUT_PORT.println(F(" MLX detected"));
   }
