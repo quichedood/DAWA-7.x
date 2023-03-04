@@ -6,7 +6,7 @@ Install PlatformIO IDE
 In "Visual Studio Code", go to "PlatformIO/Miscellaneous/PlatformIO Core CLI/" and run :
 pio settings set projects_dir "/The/Github/directory/DAWA7/03-DEV"
 
-Edit file : [...]\.platformio\packages\framework-arduino-samd\variants\arduino_mzero\variant.cpp
+Edit file : C:\Users\<profilename>\.platformio\packages\framework-arduino-samd\variants\arduino_mzero\variant.cpp
 Comment following lines :
 //Uart Serial( &sercom5, PIN_SERIAL_RX, PIN_SERIAL_TX, PAD_SERIAL_RX, PAD_SERIAL_TX ) ;
 //void SERCOM5_Handler()
@@ -63,3 +63,23 @@ Replace all "Serial." by "DEBUG_PORT."
 
 > ELMduino.h
 Add at line 4 : "#define DEBUG_PORT SERIAL_PORT_USBVIRTUAL"
+
+#### MLX90614 Library ####
+> Adafruit_MLX90614.cpp
+uint8_t Adafruit_MLX90614::readAddr(void) {
+  uint8_t addr;
+
+  addr = lowByte(read16(MLX90614_ADDR));
+  return addr;
+}
+
+void Adafruit_MLX90614::writeAddr(uint8_t addr) {
+  write16(MLX90614_ADDR, 0); // erase
+  delay(10);
+  write16(MLX90614_ADDR, addr);
+  delay(10);
+}
+
+> Adafruit_MLX90614.h
+uint8_t readAddr(void);
+void writeAddr(uint8_t addr);

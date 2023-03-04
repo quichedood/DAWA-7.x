@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "*.tcc": "cpp",
+        "limits": "cpp",
+        "*.impl": "cpp"
     }
 }

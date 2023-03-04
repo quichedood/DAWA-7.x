@@ -7,24 +7,16 @@
 
 /**************************************************************
   TODO
-  OK - Tester vitesse
-  OK - Tester RPM
-  OK - Tester MLX
-  OK - Tester valeurs sur carte SD
-  OK - Régler variables vitesse
-  OK - Graphisme RPM
-  OK - Affichage running
-  OK - Calibration gear
-  Importer les circuits de la carte SD vers l'EEPROM
-  Lister les circuits sur l'EEPROM
-  Lister l'historique des chronos
+  Un fichier unique pour synthèse chronos
+  Lister l'historique des chronos (prédéfinir des affichages)
   LED/Shiftlight (+param)
-  Ajouter le nom du circuit aux noms de fichiers de log
+  Alarmes (paramétrage/affichage)
+  Passer trackID sur 8 bits (CSV read) - réduire empreinte EEPROM
   Nommer les inputs
-  Pagination circuits
   Optimisation code FT800
   Texte sous forme de constante (verifier tout le code)
-
+  Voir EVE_cmd_dl
+  OBD : turned off the adaptive timing "AT0" then reduced the time out "AT ST xx"
 **************************************************************/
 
 /*****************************************************
@@ -37,7 +29,7 @@
 #include <SPI.h>               // SPI library
 #include <Wire.h>              // I2C library
 #include <extEEPROM.h>         // EEPROM library (http://github.com/PaoloP74/extEEPROM)
-#include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
+#include <Adafruit_MCP23X17.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
 #include <TimeLib.h>           // Time library (https://github.com/PaulStoffregen/Time)
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
@@ -67,15 +59,10 @@
 *****************************************************/
 
 // Inputs
-uint32_t inDigiSqrRpm;       // Digital square input (RPM)
-uint32_t inDigiSqrOpt1;      // Digital square input (optional)
-bool inDigiBrake;            // Digital boolean input (brake)
-bool inDigiOpt1;             // Digital boolean input (optional)
-uint16_t inAnaGear;          // Digital analog input (GEAR)
-uint16_t inAnaThrottle;      // Digital analog input (THROTTLE)
-uint16_t inAnaOpt1;          // Digital analog input (optional)
-uint16_t inAnaOpt2;          // Digital analog input (optional)
-uint8_t enDigitalInputsBits; // Store enabled digital inputs (use binary values, ex : 10100000 > DIGI_SQR_RPM and DIGI_BRAKE enabled)
+uint16_t g_inAnaGearCalib[GEAR_CALIB_SIZE]; // Calibration values for GEAR input, each gear has a analogic value
+uint8_t g_gearNCheck = 0;                   // Counter to check if gear is set to neutral
+bool g_enObd;                               // Enable OBD features
+uint8_t g_enDigitalInputsBits;              // Store enabled digital inputs (use binary values, ex : 10100000 > DIGI_SQR_RPM and DIGI_BRAKE enabled)
 // BIT 0 = DIGI_SQR_RPM
 // BIT 1 = DIGI_SQR_OPT_1
 // BIT 2 = DIGI_BRAKE
@@ -84,7 +71,7 @@ uint8_t enDigitalInputsBits; // Store enabled digital inputs (use binary values,
 // BIT 5 = N/A
 // BIT 6 = N/A
 // BIT 7 = N/A
-uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary values, ex : 11000000 > inAnaOpt1 and inAnaOpt2 enabled)
+uint8_t g_enAnalogInputsBits; // Store enabled digital inputs (use binary values, ex : 11000000 > inAnaOpt1 and inAnaOpt2 enabled)
 // BIT 0 = inAnaOpt1 (GEAR)
 // BIT 1 = inAnaOpt2
 // BIT 2 = inAnaOpt3
@@ -94,60 +81,72 @@ uint8_t enAnalogInputsBits; // Store enabled digital inputs (use binary values, 
 // BIT 6 = inAnaOpt7
 // BIT 7 = inAnaOpt8
 
-uint8_t tmpComp, bitShift; // Used to compare values for enabled inputs checks
-
-uint16_t inAnaGearCalib[GEAR_CALIB_SIZE]; // Calibration values for GEAR input, each gear has a analogic value
-uint8_t gearNCheck = 0;                   // Counter to check if gear is set to neutral
-
 // SD Card
-File logFile;      // One line every 100ms with all detailed data
-File lapFile;      // One line per lap with laptime
-File trackFile;    // One line per track with GPS coordinates of finish line
-File historyFile;  // History of all sessions
-char filename[32]; // Filename
+File logFile;               // One line every 100ms with all detailed data
+File lapFile;               // One line per lap with laptime
+char g_workingFilename[64]; // Filename which is actually used
 
 // GPS & Timing
-bool recordTrackData, addFinishLog, isRunning = false; // Boolean values to check multiple states
-char trackName[16];                                    // Track name
-uint8_t lapCounter = 0;                                // Lap count
-int16_t runMinutes, runSeconds;
-uint16_t trackId, lapId;
-int32_t timeCsec, timeSec, lastFlSec, lastFlCsec, lapSec, lapCsec, posCrossLat, posCrossLon, flineLat1, flineLon1, flineLat2, flineLon2; // Finish line GPS coordinates
-uint32_t lastPinRead = 0, lastOneSecSync = 0, lastSdSync = 0, fixCount = 0, elapsedTime = 0;
-float coordsDistance, totalDistance, tToFl; // Time To Finish Line
-uint8_t gpsFixStatus;                       // GPS signal quality status
+int32_t g_lapSec, g_lapCsec; // Lap seconds and centiseconds
+float g_totalDistance;       // Time To Finish Line
+int8_t g_isRunning = 0;      // Running status (-1 = error, 0 = not running, 1 = run as datalogger only, 2 = run as datalogger and laptimer)
+time_t g_date;               // A date
+
+// OBD
+uint32_t g_rpm;                 // RPM from OBD
+uint32_t g_engineCoolantT;      // Engine coolant temperature from OBD
+uint32_t g_obdTemp;             // Temp value from OBD
+uint32_t g_lastObdSlowSync = 0; // OBD slow refresh rate calculation
+uint32_t g_lastObdFastSync = 0; // OBD fast refresh rate calculation
+
+// Analog inputs (ADC)
+uint16_t g_anaValues[8]; // All 8 measured analogic values
+char g_anaValuesChar[8]; // Analogic value converted to a single character (useful for ANA1/GEAR : N,1,2,3 ...)
+
+// Digital inputs
+uint32_t g_digValues[4]; // Digital values
 
 // Infrared temperature sensor
-uint8_t mlxAddresses[MAX_MLX_SIZE]; // Store each MLX I2C addresses
-double mlxValues[MAX_MLX_SIZE];     // Store MLX values
-
-// Analog to Digital converter (ADC)
-uint16_t anaValues[8]; // All 8 measured analogic values
-char anaValuesChar[8]; // Analogic value converted to a single character (useful for ANA1/GEAR : N,1,2,3 ...)
-uint32_t digValues[4]; // All 4 measured digital values
+uint8_t g_mlxAddresses[MAX_MLX_SIZE]; // Store each MLX I2C addresses
+double g_mlxValues[MAX_MLX_SIZE];     // Store MLX values
 
 // RPM
-uint8_t rpmFlywheelTeeth;   // Number of flywheel teeth (configurable through setup menu)
-uint8_t rpmCorrectionRatio; // RPM correction ratio (configurable through setup menu)
+uint8_t g_rpmFlywheelTeeth;   // Number of flywheel teeth (configurable through setup menu)
+uint8_t g_rpmCorrectionRatio; // RPM correction ratio (configurable through setup menu)
 
 // Buttons & menu
-bool fakeLap = false;  // Used to simulate a new lap (debug)
-char msgLabel[255];    // Used to store on screen popup message
-uint32_t msgDelay = 0; // Number of ms the message is printed on screen
-uint8_t msgType = 0;   // Display type (color : green, red or grey)
+bool g_isFakeLap = false; // Used to simulate a new lap (debug)
+char g_msgLabel[255];     // Used to store on screen popup message
+uint32_t g_msgDelay = 0;  // Number of ms the message is printed on screen
+uint8_t g_msgType = 0;    // Display type (color : green, red or grey)
 
 // TFT screen
-uint32_t lastTftTouchSync = 0; // TFT refresh rate calculation
-uint8_t lastTftPrintSync = 0;  // TFT refresh rate calculation
-uint32_t currentMs;            // TFT refresh rate calculation
-uint8_t tftScreenId = 10;      // Default start screen ID
+uint32_t g_lastTftTouchSync = 0; // TFT refresh rate calculation
+uint8_t g_lastTftPrintSync = 0;  // TFT refresh rate calculation
+uint8_t g_tftScreenId = 10;      // Which screen is printed on TFT (0 = start page)
 
+// Tracks
+Track g_tracksList[MAX_TRACKS];                        // A array of TRACK_PAGINATION tracks
+Track g_currentTrack;                                  // Current track (the nearest one)
+Track g_nullTrack = {-1, "NO TRACK!", -1, 0, 0, 0, 0}; // A null track
+int16_t g_currentTrackId;                              // Current track ID
+uint8_t g_trackQty = 0;                                // Number of defined tracks
+uint8_t g_trackPage = 0;                               // ID of the printed page on tracks screen
+char g_trackName[16];                                  // Track name
+
+// Laps
+Lap g_lapsList[MAX_LAPS];                          // An array of MAX_LAPS laps
+Lap g_currentLap;                                  // Current lap (running)
+Lap g_nullLap = {0, 0, 0, 0, 0, 0, 0.00, 0, 0, 0}; // A null lap
+uint8_t g_lapQty = 0;                              // Number of laps in the array "g_historyLap"
+uint8_t g_lapPage = 0;                             // ID of the printed page on laps screen
+
+// Debug data
 #ifdef DEBUG
-uint32_t Now = 0;                 // used to calculate integration interval
-uint32_t count = 0, sumCount = 0; // used to control display output rate
-float deltat = 0.0f, sum = 0.0f;  // integration interval for both filter schemes
-uint32_t rpm = 0;
-uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration interval
+uint32_t g_dbgNow = 0;                     // used to calculate integration interval
+uint32_t g_dbgSumCount = 0;                // used to control display output rate
+float g_dbgDeltat = 0.0f, g_dbgSum = 0.0f; // integration interval for both filter schemes
+uint32_t g_dbgLastUpdate = 0;              // used to calculate integration interval
 #endif
 
 /*****************************************************
@@ -157,11 +156,11 @@ uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration inter
 *****************************************************/
 
 // EEPROM
-extEEPROM eep(kbits_2, 1, 8); // I2C Address 0x50
+extEEPROM eep(kbits_64, 1, 8); // I2C Address 0x50
 
 // I/O Expander MCP23017
-Adafruit_MCP23017 MCP1;
-Adafruit_MCP23017 MCP2;
+Adafruit_MCP23X17 MCP1;
+Adafruit_MCP23X17 MCP2;
 
 // SD Card
 SdFat sd;
@@ -225,69 +224,127 @@ void setup()
   digitalWrite(powerState, HIGH);
 
   /**************************************************************
-    I/O Expander 1 (Output = 4 leds, Input = 4 buttons)
+    I/O Expander 1 (Output = 8 leds)
   **************************************************************/
-  MCP1.begin();
-  MCP1.pinMode(mcp1Led1, OUTPUT);
-  MCP1.pinMode(mcp1Led2, OUTPUT);
-  MCP1.pinMode(mcp1Led3, OUTPUT);
-  MCP1.pinMode(mcp1Led4, OUTPUT);
-  MCP1.pinMode(mcp1Led5, OUTPUT);
-  MCP1.pinMode(mcp1Led6, OUTPUT);
-  MCP1.pinMode(mcp1Led7, OUTPUT);
-  MCP1.pinMode(mcp1Led8, OUTPUT);
-  MCP1.digitalWrite(mcp1Led1, LOW); // Power on led1, power off after successfull init
-  MCP1.digitalWrite(mcp1Led2, LOW); // Power on led2, power off after successfull init
-  MCP1.digitalWrite(mcp1Led3, LOW); // Power on led3, power off after successfull init
-  MCP1.digitalWrite(mcp1Led4, LOW); // Power on led4, power off after successfull init
-  MCP1.digitalWrite(mcp1Led5, LOW); // Power on led5, power off after successfull init
-  MCP1.digitalWrite(mcp1Led6, LOW); // Power on led6, power off after successfull init
-  MCP1.digitalWrite(mcp1Led7, LOW); // Power on led7, power off after successfull init
-  MCP1.digitalWrite(mcp1Led8, LOW); // Power on led8, power off after successfull init
-
-  /**************************************************************
-    I/O Expander 2 (Output = 5v power for 6 devices like MLX sensors plugged on hub)
-  **************************************************************/
-  MCP2.begin(4);
-  MCP2.pinMode(0, OUTPUT);
-  MCP2.pinMode(1, OUTPUT);
-  MCP2.pinMode(2, OUTPUT);
-  MCP2.pinMode(3, OUTPUT);
-  MCP2.pinMode(4, OUTPUT);
-  MCP2.pinMode(5, OUTPUT);
-  MCP2.pinMode(6, OUTPUT);
-  MCP2.pinMode(7, OUTPUT);
-  MCP2.digitalWrite(0, HIGH);
-  MCP2.digitalWrite(1, HIGH);
-  MCP2.digitalWrite(2, HIGH);
-  MCP2.digitalWrite(3, HIGH);
-  MCP2.digitalWrite(4, HIGH);
-  MCP2.digitalWrite(5, HIGH);
-  MCP2.digitalWrite(6, HIGH);
-  MCP2.digitalWrite(7, HIGH);
-
-  /**************************************************************
-    OBD2 Init (Serial2)
-  **************************************************************/
-  OBD2_PORT.begin(9600);
-  pinPeripheral(6, PIO_SERCOM); // Pin D6 for RX
-  pinPeripheral(7, PIO_SERCOM); // Pin D7 for TX
-  if (!myELM327.begin(OBD2_PORT))
+  if (!MCP1.begin_I2C())
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_OBD);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_FAILED);
+    DEBUG_PORT.println(LABEL_MCP1_FAILED);
 #endif
-    initError(1);
   }
   else
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_OBD);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_OK);
+    DEBUG_PORT.println(LABEL_MCP1_OK);
 #endif
+    MCP1.pinMode(mcp1Led1, OUTPUT);
+    MCP1.pinMode(mcp1Led2, OUTPUT);
+    MCP1.pinMode(mcp1Led3, OUTPUT);
+    MCP1.pinMode(mcp1Led4, OUTPUT);
+    MCP1.pinMode(mcp1Led5, OUTPUT);
+    MCP1.pinMode(mcp1Led6, OUTPUT);
+    MCP1.pinMode(mcp1Led7, OUTPUT);
+    MCP1.pinMode(mcp1Led8, OUTPUT);
+    MCP1.digitalWrite(mcp1Led1, HIGH);
+    MCP1.digitalWrite(mcp1Led2, HIGH);
+    MCP1.digitalWrite(mcp1Led3, HIGH);
+    MCP1.digitalWrite(mcp1Led4, HIGH);
+    MCP1.digitalWrite(mcp1Led5, HIGH);
+    MCP1.digitalWrite(mcp1Led6, HIGH);
+    MCP1.digitalWrite(mcp1Led7, HIGH);
+    MCP1.digitalWrite(mcp1Led8, HIGH);
+  }
+
+  /**************************************************************
+    I/O Expander 2 (Output = 5v power for 6 devices like MLX sensors plugged on hub)
+  **************************************************************/
+  if (!MCP2.begin_I2C(0x24))
+  {
+#ifdef DEBUG
+    DEBUG_PORT.println(LABEL_MCP2_FAILED);
+#endif
+  }
+  else
+  {
+#ifdef DEBUG
+    DEBUG_PORT.println(LABEL_MCP2_OK);
+#endif
+    MCP2.pinMode(0, OUTPUT);
+    MCP2.pinMode(1, OUTPUT);
+    MCP2.pinMode(2, OUTPUT);
+    MCP2.pinMode(3, OUTPUT);
+    MCP2.pinMode(4, OUTPUT);
+    MCP2.pinMode(5, OUTPUT);
+    MCP2.pinMode(6, OUTPUT);
+    MCP2.pinMode(7, OUTPUT);
+    MCP2.digitalWrite(0, HIGH);
+    MCP2.digitalWrite(1, HIGH);
+    MCP2.digitalWrite(2, HIGH);
+    MCP2.digitalWrite(3, HIGH);
+    MCP2.digitalWrite(4, HIGH);
+    MCP2.digitalWrite(5, HIGH);
+    MCP2.digitalWrite(6, HIGH);
+    MCP2.digitalWrite(7, HIGH);
+  }
+
+  /**************************************************************
+    OBD2 Init (Serial2)
+  **************************************************************/
+  // Trying to establish connection to OBD @921600bps (STN2100 default is 9600bps)
+  OBD2_PORT.begin(921600);
+  pinPeripheral(6, PIO_SERCOM);   // Pin D6 for RX
+  pinPeripheral(7, PIO_SERCOM);   // Pin D7 for TX
+  if (!myELM327.begin(OBD2_PORT)) // To DEBUG : if (!myELM327.begin(OBD2_PORT, true, 1000))
+  {
+    // @921600bps not working, probably the first time you run this program on new hardware
+    // Trying @9600bps which is the default speed
+    OBD2_PORT.begin(9600);
+    pinPeripheral(6, PIO_SERCOM); // Pin D6 for RX
+    pinPeripheral(7, PIO_SERCOM); // Pin D7 for TX
+    if (myELM327.begin(OBD2_PORT))
+    {
+      // OBD is OK @9600bps, trying to switch to 921600bps
+      myELM327.sendCommand_Blocking(OBD_STSBR_921600);
+#ifdef DEBUG
+      DEBUG_PORT.print(LABEL_SWITCH_2_921600);
+      DEBUG_PORT.println(myELM327.payload);
+#endif
+      delay(75);
+      OBD2_PORT.begin(921600);
+      pinPeripheral(6, PIO_SERCOM); // Pin D6 for RX
+      pinPeripheral(7, PIO_SERCOM); // Pin D7 for TX
+
+      // Save new baud rate to default (NV memory) only if serial communication is successfull
+      myELM327.sendCommand_Blocking(OBD_STI);
+      if (strstr(myELM327.payload, OBD_STN2100) != NULL)
+      {
+        myELM327.sendCommand_Blocking(OBD_STWBR);
+#ifdef DEBUG
+        DEBUG_PORT.print(LABEL_NEW_RATE_921600);
+        DEBUG_PORT.println(myELM327.payload);
+#endif
+      }
+    }
+  }
+
+  // Check if OBD chip is responding correctly at specified baud rate
+  myELM327.sendCommand_Blocking(OBD_STI);
+  if (strstr(myELM327.payload, OBD_STN2100) != NULL)
+  {
+#ifdef DEBUG
+    DEBUG_PORT.print(LABEL_OBD_OK);
+    DEBUG_PORT.print(F(" ("));
+    DEBUG_PORT.print(myELM327.payload);
+    DEBUG_PORT.println(F(")"));
+#endif
+    MCP1.digitalWrite(mcp1Led1, LOW); // Power on led1, power off after successfull init
+  }
+  else
+  {
+#ifdef DEBUG
+    DEBUG_PORT.print(LABEL_OBD_FAILED);
+#endif
+    initError(128);
   }
 
   /**************************************************************
@@ -296,19 +353,16 @@ void setup()
   if (!sd.begin(sdCsPin, SD_SCK_MHZ(12)))
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_SD);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_FAILED);
+    DEBUG_PORT.println(LABEL_SD_FAILED);
 #endif
-    initError(2);
+    initError(64);
   }
   else
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_SD);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_OK);
+    DEBUG_PORT.println(LABEL_SD_OK);
 #endif
+    MCP1.digitalWrite(mcp1Led2, LOW); // Power on led2, power off after successfull init
   }
 
   /**************************************************************
@@ -317,30 +371,27 @@ void setup()
   if (!eep.begin(eep.twiClock400kHz) == 0)
   {
 #ifdef DEBUG
-    DEBUG_PORT.println(LABEL_EEPROM);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.print(LABEL_FAILED);
+    DEBUG_PORT.println(LABEL_EEPROM_FAILED);
 #endif
-    initError(3);
+    initError(32);
   }
   else
   {
-    eepromReload();
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_EEPROM);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_OK);
+    DEBUG_PORT.println(LABEL_EEPROM_OK);
 #endif
+    eepromReload();
+    MCP1.digitalWrite(mcp1Led3, LOW); // Power on led3, power off after successfull init
   }
 
   /**************************************************************
     MLX Init (I2C)
   **************************************************************/
   // Read infrared temp sensors I2C Address from EEPROM (MAX_MLX_SIZE x 8 bits)
-  EEPROM_readAnything(68, mlxAddresses) == sizeof(mlxAddresses);
+  EEPROM_readAnything(EEPROM_MLX_ADDR, g_mlxAddresses) == sizeof(g_mlxAddresses);
   for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
   {
-    if (mlxAddresses[i] != 0x00)
+    if (g_mlxAddresses[i] != 0x00)
     {
       mlx[i].begin();
     }
@@ -349,22 +400,19 @@ void setup()
   /**************************************************************
     ADC Init
   **************************************************************/
-  if (!initADC() == 0)
+  if (!initADC(g_enAnalogInputsBits) == 0)
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_ADC);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_FAILED);
+    DEBUG_PORT.println(LABEL_ADC_FAILED);
 #endif
-    initError(4);
+    initError(16);
   }
   else
   {
 #ifdef DEBUG
-    DEBUG_PORT.print(LABEL_ADC);
-    DEBUG_PORT.print(F(" : "));
-    DEBUG_PORT.println(LABEL_OK);
+    DEBUG_PORT.println(LABEL_ADC_OK);
 #endif
+    MCP1.digitalWrite(mcp1Led4, LOW); // Power on led4, power off after successfull init
   }
 
   /**************************************************************
@@ -383,10 +431,9 @@ void setup()
   sendUBX(ubxDisableZDA, sizeof(ubxDisableZDA));
 
 #ifdef DEBUG
-  DEBUG_PORT.print(LABEL_GPS);
-  DEBUG_PORT.print(F(" : "));
-  DEBUG_PORT.println(LABEL_OK);
+  DEBUG_PORT.println(LABEL_GPS_OK);
 #endif
+  MCP1.digitalWrite(mcp1Led5, LOW); // Power on led5, power off after successfull init
 
   /**************************************************************
     2 counters (TCC0 & TCC1)
@@ -490,16 +537,28 @@ void setup()
  * ############## Main loop ######################## *
  * ################################################# *
 *****************************************************/
-
 void loop()
 {
+  static uint8_t tmpComp, bitShift; // Used to compare values for enabled inputs checks
+  static bool addFinishLog = false;
+  static float tToFl;
+  static uint32_t lastPinRead, lastOneSecSync, lastSdSync, fixCount, elapsedTime;
+  static int32_t posCrossLat, posCrossLon;
+  typedef enum
+  {
+    IDLE,
+    COOLANT_TEMP,
+    ENG_RPM
+  } obd_pid_states;
+  static obd_pid_states obd_state = IDLE;
+
 #ifdef DEBUG
   // Here we calculate average update rate of main loop
-  Now = micros();
-  deltat = ((Now - lastUpdate) / 1000000.0f);
-  lastUpdate = Now;
-  sum += deltat;
-  sumCount++;
+  g_dbgNow = micros();
+  g_dbgDeltat = ((g_dbgNow - g_dbgLastUpdate) / 1000000.0f);
+  g_dbgLastUpdate = g_dbgNow;
+  g_dbgSum += g_dbgDeltat;
+  g_dbgSumCount++;
 #endif
 
   /**************************************************************
@@ -526,7 +585,7 @@ void loop()
     bitShift = 0b00000001;
     for (uint8_t i = 0; i < 4; i++)
     { // Read values of enabled inputs only
-      tmpComp = bitShift & enDigitalInputsBits;
+      tmpComp = bitShift & g_enDigitalInputsBits;
       if (tmpComp == bitShift)
       {
         switch (i)
@@ -537,12 +596,12 @@ void loop()
           while (TCC1->SYNCBUSY.bit.CTRLB)
             ; // Wait for the CTRLB register write synchronization
           while (TCC1->SYNCBUSY.bit.COUNT)
-            ;                            // Wait for the COUNT register read sychronization
-          digValues[i] = REG_TCC1_COUNT; // Read TCNT1 register (timer1 counter)
-          REG_TCC1_COUNT = 0x0000;       // Clear timer's COUNT value
+            ;                              // Wait for the COUNT register read sychronization
+          g_digValues[i] = REG_TCC1_COUNT; // Read TCNT1 register (timer1 counter)
+          REG_TCC1_COUNT = 0x0000;         // Clear timer's COUNT value
           while (TCC1->SYNCBUSY.bit.COUNT)
-            ;                                                                                      // Wait for synchronization
-          digValues[i] = digValues[i] * rpmCorrectionRatio * 600 / elapsedTime / rpmFlywheelTeeth; // Ratio between pulse and rpm (22 > flywheel has 22 teeth ### 600 > with check every 100ms, RPM is by minute) ### rpmCorrectionRatio > *(100+corr) / elapsedTime) > if we read counter @101ms or 102ms values should be adjusted
+            ;                                                                                              // Wait for synchronization
+          g_digValues[i] = g_digValues[i] * g_rpmCorrectionRatio * 600 / elapsedTime / g_rpmFlywheelTeeth; // Ratio between pulse and rpm (22 > flywheel has 22 teeth ### 600 > with check every 100ms, RPM is by minute) ### g_rpmCorrectionRatio > *(100+corr) / elapsedTime) > if we read counter @101ms or 102ms values should be adjusted
           break;
         // bit 1 : SQR1;
         case 1:
@@ -550,20 +609,20 @@ void loop()
           while (TCC0->SYNCBUSY.bit.CTRLB)
             ; // Wait for the CTRLB register write synchronization
           while (TCC0->SYNCBUSY.bit.COUNT)
-            ;                            // Wait for the COUNT register read sychronization
-          digValues[i] = REG_TCC0_COUNT; // Read TCNT0 register (timer0 counter)
-          REG_TCC0_COUNT = 0x0000;       // Clear timer's COUNT value
+            ;                              // Wait for the COUNT register read sychronization
+          g_digValues[i] = REG_TCC0_COUNT; // Read TCNT0 register (timer0 counter)
+          REG_TCC0_COUNT = 0x0000;         // Clear timer's COUNT value
           while (TCC0->SYNCBUSY.bit.COUNT)
-            ;                                              // Wait for synchronization
-          digValues[i] = digValues[i] * 100 / elapsedTime; // Ratio is set to 1 so no maths ### (* 100 / elapsedTime) > if we read counter @99ms, 101ms or 102ms values should be adjusted
+            ;                                                  // Wait for synchronization
+          g_digValues[i] = g_digValues[i] * 100 / elapsedTime; // Ratio is set to 1 so no maths ### (* 100 / elapsedTime) > if we read counter @99ms, 101ms or 102ms values should be adjusted
           break;
         // bit 2 : DIG1;
         case 2:
-          digValues[i] = digitalRead(inDigiBrakePin); // Read "inDigiBrakePin" (pin is plugged on the "+" of the stop light)
+          g_digValues[i] = digitalRead(inDigiBrakePin); // Read "inDigiBrakePin" (pin is plugged on the "+" of the stop light)
           break;
         // bit 3 : DIG2;
         case 3:
-          digValues[i] = digitalRead(inDigiOpt1Pin); // Read "inDigiOpt1Pin"
+          g_digValues[i] = digitalRead(inDigiOpt1Pin); // Read "inDigiOpt1Pin"
           break;
         }
       }
@@ -573,18 +632,21 @@ void loop()
     /**************************************************************
       Read analog enabled INPUTS
     **************************************************************/
-    readAdcValues(anaValues); // It takes time to read all values (one voltage conversion = 12.2ms !)
-    formatAdcValues(anaValues);
+    readAdcValues(); // It takes time to read all values (one voltage conversion = 12.2ms !)
+    formatAdcValues();
 
     /**************************************************************
       Sync files on SDcard every 300 fixes (300x100ms = 30sec) to avoid dataloss on power failure
     **************************************************************/
-    if (isRunning && (fixCount - lastSdSync >= 300))
+    if (g_isRunning >= 1 && (fixCount - lastSdSync >= 300))
     {
       lastSdSync = fixCount;
       SdFile::dateTimeCallback(dateTimeSd);
       logFile.sync();
-      lapFile.sync();
+      if (g_isRunning == 2)
+      {
+        lapFile.sync();
+      }
     }
 
     /**************************************************************
@@ -598,19 +660,10 @@ void loop()
       lastOneSecSync = fixCount;
 #ifdef DEBUG
       DEBUG_PORT.print("rate = ");
-      DEBUG_PORT.print((float)sumCount / sum, 0);
+      DEBUG_PORT.print((float)g_dbgSumCount / g_dbgSum, 0);
       DEBUG_PORT.println(" Hz");
-      sumCount = 0;
-      sum = 0;
-
-      /*float tempRPM = myELM327.rpm();
-      if (myELM327.status == ELM_SUCCESS)
-      {
-        rpm = (uint32_t)tempRPM;
-        DEBUG_PORT.print("RPM: "); DEBUG_PORT.println(rpm);
-      } else {
-        DEBUG_PORT.print("RPM: NS "); DEBUG_PORT.println(myELM327.status);
-      }*/
+      g_dbgSumCount = 0;
+      g_dbgSum = 0;
 #endif
 
       /**************************************************************
@@ -618,9 +671,9 @@ void loop()
       **************************************************************/
       for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
       {
-        if (mlxAddresses[i] != 0x00)
+        if (g_mlxAddresses[i] != 0x00)
         {
-          mlxValues[i] = mlx[i].readObjectTempC();
+          g_mlxValues[i] = mlx[i].readObjectTempC();
         }
       }
     }
@@ -633,21 +686,21 @@ void loop()
       If laptimer is NOT running :
       - N/A
     **************************************************************/
-    if (isRunning)
+    if (g_isRunning >= 1)
     {
-      // Calculate total distance (for SeriousRacing)
-      coordsDistance = gpsDistance(fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), fix_data.latitudeL(), fix_data.longitudeL());
-      totalDistance += coordsDistance;
-
-      if (recordTrackData == true)
+      if (g_isRunning == 2) // Laptimer and datalogger
       {
+        // Calculate total distance (for SeriousRacing compatibility)
+        g_totalDistance += gpsDistance(fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), fix_data.latitudeL(), fix_data.longitudeL());
+
         // Check if we pass the finishline (2x2 coordinates for finish line points + 2x2 coordinates for last position + position now)
-        if (segIntersect(fix_data.latitudeL(), fix_data.longitudeL(), fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), flineLat1, flineLon1, flineLat2, flineLon2, posCrossLat, posCrossLon) || fakeLap == true)
+        if (segIntersect(fix_data.latitudeL(), fix_data.longitudeL(), fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), g_currentTrack.trackFlineLat1, g_currentTrack.trackFlineLon1, g_currentTrack.trackFlineLat2, g_currentTrack.trackFlineLon2, posCrossLat, posCrossLon) || g_isFakeLap == true)
         {
-          if (fakeLap == true)
+          // Debug button to simulate finish line crossing
+          if (g_isFakeLap == true)
           {
-            fakeLap = false;
-            tToFl = 0; //random(1, 100) / 100.00; // Random value to simulate Time To Finish Line
+            g_isFakeLap = false;
+            tToFl = random(0, 9) / 100.00; // Random value to simulate Time To Finish Line (TimeToFinishLine is always < 0.10 sec as there is a GPS fix every 0.10 sec !)
           }
           else
           {
@@ -655,50 +708,57 @@ void loop()
             tToFl = (gpsDistance(fix_data_prev.latitudeL(), fix_data_prev.longitudeL(), posCrossLat, posCrossLon) / gpsDistance(fix_data.latitudeL(), fix_data.longitudeL(), fix_data_prev.latitudeL(), fix_data_prev.longitudeL())) * ((fix_data.dateTime.hours * 3600 + fix_data.dateTime.minutes * 60 + fix_data.dateTime.seconds + fix_data.dateTime_cs / 100.00) - (fix_data_prev.dateTime.hours * 3600 + fix_data_prev.dateTime.minutes * 60 + fix_data_prev.dateTime.seconds + fix_data_prev.dateTime_cs / 100.00));
           }
           // Add "Time to finish line (tToFl)" to the last known Epoch Time (fix_data_prev)
-          timeAdd(tToFl, fix_data_prev.dateTime, fix_data_prev.dateTime_cs, timeSec, timeCsec);
+          timeToFinishLineCalculation(tToFl, fix_data_prev.dateTime, fix_data_prev.dateTime_cs, g_currentLap.lapEndTimestampS, g_currentLap.lapEndTimestampCs);
 
-          // Calculate total laptime (substract previous finish laptime to actual laptime)
-          if (lapCounter > 0)
-          { // Get first laptime at the end of the lap 1 (lapCounter = 1 / We start from the paddocks)
-            timeSubstract(timeSec, timeCsec, lastFlSec, lastFlCsec, lapSec, lapCsec);
+          // Get first laptime at the end of the lap 1 (g_lapQty = 1 / We start from the paddocks)
+          if (g_lapQty > 0)
+          {
+            // Calculate total laptime (substract previous finish laptime to actual laptime)
+            lapTimeCalculation(g_currentLap.lapEndTimestampS, g_currentLap.lapEndTimestampCs, g_currentLap.lapStartTimestampS, g_currentLap.lapStartTimestampCs, g_currentLap.lapTimeS, g_currentLap.lapTimeCs);
 
-            runMinutes = lapSec / 60;
-            runSeconds = lapSec % 60;
-
-            lapFile.print(lapCounter);
-            lapFile.print(F(";"));
-            lapFile.print(runMinutes); // Store laptime mm:sss:ms (human readable)
-            lapFile.print(F(":"));
-            if (runSeconds < 10)
-              lapFile.print(F("0")); // Leading zeros (remember "runSeconds" is an integer !!)
-            lapFile.print(runSeconds);
-            lapFile.print(F(":"));
-            if (lapCsec < 10)
-              lapFile.print(F("0")); // Leading zeros (remember "lapCsec" is an integer !!)
-            lapFile.print(lapCsec);
-            lapFile.print(F(";")); // Store laptime sss.ms (enable float comparaison for best lap or other calculations)
-            lapFile.print(lapSec);
-            lapFile.print(F("."));
-            if (lapCsec < 10)
-              lapFile.print(F("0")); // Leading zeros (remember "lapCsec" is an integer !!)
-            lapFile.println(lapCsec);
+            // Complete the "lapTime" value (float value in sss.cs ... easier to compare laptimes)
+            g_currentLap.lapTime = g_currentLap.lapTimeS + (g_currentLap.lapTimeCs / 100.00);
           }
 
-          // Store timestamp (sec+ms) at the finish line to calculate next lap time
-          lastFlSec = timeSec;
-          lastFlCsec = timeCsec;
+          // Copy current lap (ended) to history laps array
+          g_lapsList[g_lapQty] = g_currentLap;
 
-          // Write the finish log line + inc lapCounter
+          // Update best lap
+          updateBestLap();
+
+          // Start a new lap with end values of the last lap
+          g_currentLap.lapStartTimestampS = g_lapsList[g_lapQty].lapEndTimestampS;
+          g_currentLap.lapStartTimestampCs = g_lapsList[g_lapQty].lapEndTimestampCs;
+          g_currentLap.lapEndTimestampS = fix_data.dateTime;
+          g_currentLap.lapEndTimestampCs = fix_data.dateTime_cs;
+          g_currentLap.lapTimeS = 0;
+          g_currentLap.lapTimeCs = 0;
+          g_currentLap.lapTime = 0.00;
+          g_currentLap.lapNumber = g_lapsList[g_lapQty].lapNumber + 1;
+          g_currentLap.lapMaxSpeed = 0;
+          g_currentLap.lapTrackId = g_lapsList[g_lapQty].lapTrackId;
+          g_currentLap.lapIsBest = false;
+
+          // This is the end of a lap, write special line in the log file
           addFinishLog = true;
-          lapCounter++;
         }
         else
         {
-          // Continuously update lapSec and lapCsec for diplaying realtime values on TFT (and only for this !)
-          if (lapCounter > 0)
+          // Continuously update lap time (end time + total time) for diplaying realtime values on TFT (and only for this !)
+          if (g_lapQty > 0)
           {
-            timeSubstract(fix_data.dateTime, fix_data.dateTime_cs, lastFlSec, lastFlCsec, lapSec, lapCsec);
+            g_currentLap.lapEndTimestampS = fix_data.dateTime;
+            g_currentLap.lapEndTimestampCs = fix_data.dateTime_cs;
+            lapTimeCalculation(g_currentLap.lapEndTimestampS, g_currentLap.lapEndTimestampCs, g_currentLap.lapStartTimestampS, g_currentLap.lapStartTimestampCs, g_currentLap.lapTimeS, g_currentLap.lapTimeCs);
+
+            // Update max speed if needed
+            if (fix_data.speed_kph() > g_currentLap.lapMaxSpeed)
+            {
+              g_currentLap.lapMaxSpeed = fix_data.speed_kph();
+            }
           }
+
+          // This is not the end of a lap, no need to write special line in the log file
           addFinishLog = false;
         }
       }
@@ -709,24 +769,66 @@ void loop()
       // Time, distance and lap (always printed)
       if (addFinishLog == true)
       {
-        logFile.print(timeSec);
+        if (g_lapQty > 0)
+        {
+          // Add lap time to the laptime file
+          lapFile.print(g_lapsList[g_lapQty].lapStartTimestampS);
+          lapFile.print(F(";"));
+          lapFile.print(g_workingFilename);
+          lapFile.print(F(";"));
+          lapFile.print(g_lapsList[g_lapQty].lapTrackId);
+          lapFile.print(F(";"));
+          lapFile.print(uint8_t(g_lapsList[g_lapQty].lapTimeS / 60)); // Store laptime mm:sss:ms (human readable)
+          lapFile.print(F(":"));
+          if (g_lapsList[g_lapQty].lapTimeS % 60 < 10)
+            lapFile.print(F("0")); // Leading zeros (remember "g_lapsList[g_lapQty].lapTimeS" is an integer !!)
+          lapFile.print(g_lapsList[g_lapQty].lapTimeS % 60);
+          lapFile.print(F(":"));
+          if (g_lapsList[g_lapQty].lapTimeCs < 10)
+            lapFile.print(F("0")); // Leading zeros (remember "g_lapsList[g_lapQty].lapTimeCs" is an integer !!)
+          lapFile.print(g_lapsList[g_lapQty].lapTimeCs);
+          lapFile.print(F(";")); // Store laptime sss.ms (enable float comparaison for best lap or other calculations)
+          lapFile.print(g_lapsList[g_lapQty].lapTimeS);
+          lapFile.print(F("."));
+          if (g_lapsList[g_lapQty].lapTimeCs < 10)
+            lapFile.print(F("0")); // Leading zeros (remember "g_lapsList[g_lapQty].lapTimeCs" is an integer !!)
+          lapFile.println(g_lapsList[g_lapQty].lapTimeCs);
+        }
+
+        // Start building the special line in the log file (end of a lap) ...
+        logFile.print(g_lapsList[g_lapQty].lapEndTimestampS);
         logFile.print(F("."));
-        if (timeCsec < 10)
+        if (g_lapsList[g_lapQty].lapEndTimestampCs < 10)
           logFile.print(F("0")); // Leading zeros (remember "timeCsec" is an integer !!)
-        logFile.print(timeCsec);
+        logFile.print(g_lapsList[g_lapQty].lapEndTimestampCs);
+
+        // Automatically stop laptimer if MAX_LAPS is reached
+        if (g_lapQty >= MAX_LAPS - 1)
+        {
+          g_isRunning = stopLaptimer();
+          g_tftScreenId = 150;
+        }
+        else
+        {
+          // Lap number is incremented
+          g_lapQty++;
+        }
       }
       else
       {
+        // Start building a normal line in the log file (NOT the end of a lap) ...
         logFile.print(fix_data.dateTime);
         logFile.print(F("."));
         if (fix_data.dateTime_cs < 10)
           logFile.print(F("0")); // Leading zeros (remember "fix_data.dateTime_cs" is an integer !!)
         logFile.print(fix_data.dateTime_cs);
       }
+
+      // ... common data in the log file (end of lap or not)
       logFile.print(F(";"));
-      logFile.print(totalDistance, 3);
+      logFile.print(g_totalDistance, 3);
       logFile.print(F(";"));
-      logFile.print(lapCounter);
+      logFile.print(g_lapQty);
       logFile.print(F(";"));
 
       // KPH, heading (always printed)
@@ -739,10 +841,10 @@ void loop()
       bitShift = 0b00000001;
       for (uint8_t i = 0; i < 4; i++)
       {
-        tmpComp = bitShift & enDigitalInputsBits;
+        tmpComp = bitShift & g_enDigitalInputsBits;
         if (tmpComp == bitShift)
         {
-          logFile.print(digValues[i]);
+          logFile.print(g_digValues[i]);
           logFile.print(F(";"));
         }
         bitShift = bitShift << 1;
@@ -752,16 +854,16 @@ void loop()
       bitShift = 0b00000001;
       for (uint8_t i = 0; i < 8; i++)
       {
-        tmpComp = bitShift & enAnalogInputsBits;
+        tmpComp = bitShift & g_enAnalogInputsBits;
         if (tmpComp == bitShift)
         {
           if (i == 0) // ANA1/GEAR
           {
-            logFile.print(anaValuesChar[i]);
+            logFile.print(g_anaValuesChar[i]);
           }
           else
           {
-            logFile.print(anaValues[i]);
+            logFile.print(g_anaValues[i]);
           }
           logFile.print(F(";"));
         }
@@ -771,9 +873,9 @@ void loop()
       // Infrared temperature (printed if enabled)
       for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
       {
-        if (mlxAddresses[i] != 0x00)
+        if (g_mlxAddresses[i] != 0x00)
         {
-          logFile.print(mlxValues[i]);
+          logFile.print(g_mlxValues[i]);
           logFile.print(F(";"));
         }
       }
@@ -798,7 +900,7 @@ void loop()
       // Anything that is added here doesn't have to be time consumming as we'll loose some GPS frames and screw everything up !
     }
     else
-    { // isRunning == false
+    { // g_isRunning == false
       /**************************************************************
         Do something else when laptimer IS NOT running
       **************************************************************/
@@ -810,16 +912,111 @@ void loop()
   /**************************************************************
     Refresh TFT screen
   **************************************************************/
-  currentMs = millis();
-  if ((currentMs - lastTftTouchSync) >= 5)
-  { /* execute the code only every 5 milli-seconds */
-    lastTftTouchSync = currentMs;
+  if ((millis() - g_lastTftTouchSync) >= 5) // execute the code only every 5 ms
+  {
+    g_lastTftTouchSync = millis();
     TFT_touch();
-    lastTftPrintSync++;
-    if (lastTftPrintSync >= 4)
-    { /* refresh the display every 20ms */
-      lastTftPrintSync = 0;
+    g_lastTftPrintSync++;
+    if (g_lastTftPrintSync >= 4) // refresh the display every 20ms
+    {
+      g_lastTftPrintSync = 0;
       TFT_display();
+    }
+  }
+
+  /**************************************************************
+    Read OBD
+  **************************************************************/
+  /*g_currentMs = millis();
+  if (g_enObd == true)
+  {
+    if ((g_currentMs - g_lastObdFastSync) >= 15) // execute the code only every 15 ms
+    {
+      g_lastObdFastSync = g_currentMs;
+      switch (obd_state)
+      {
+      case ENG_RPM:
+        g_obdTemp = (uint32_t)myELM327.rpm();
+        if (myELM327.nb_rx_state == ELM_SUCCESS)
+        {
+          g_rpm = g_obdTemp;
+          obd_state = COOLANT_TEMP;
+        }
+        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+        {
+          //myELM327.printError();
+          obd_state = COOLANT_TEMP;
+        }
+        break;
+      case COOLANT_TEMP:
+        g_obdTemp = (uint32_t)myELM327.engineCoolantTemp();
+        if (myELM327.nb_rx_state == ELM_SUCCESS)
+        {
+          g_engineCoolantT = g_obdTemp;
+          obd_state = ENG_RPM;
+        }
+        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+        {
+          //myELM327.printError();
+          obd_state = ENG_RPM;
+        }
+        break;
+      }
+    }
+  }*/
+
+  // g_currentMs = millis();
+  if (g_enObd == true)
+  {
+    switch (obd_state)
+    {
+    case IDLE:
+      if (millis() > g_lastObdSlowSync + 500)
+      {
+        g_lastObdSlowSync = millis();
+        obd_state = COOLANT_TEMP;
+#ifdef DEBUG
+        DEBUG_PORT.println("check COOLANT");
+#endif
+      }
+      else if (millis() > g_lastObdFastSync + 100)
+      {
+        g_lastObdFastSync = millis();
+        obd_state = ENG_RPM;
+#ifdef DEBUG
+        DEBUG_PORT.println("check RPM");
+#endif
+      }
+      break;
+    case ENG_RPM:
+      g_obdTemp = (uint32_t)myELM327.rpm();
+      if (myELM327.nb_rx_state == ELM_SUCCESS)
+      {
+        g_rpm = g_obdTemp;
+        obd_state = IDLE; // Or any other fast OBD sync
+      }
+      else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+      {
+        //myELM327.printError();
+        obd_state = IDLE; // Or any other fast OBD sync
+      }
+      break;
+    case COOLANT_TEMP:
+      g_obdTemp = (uint32_t)myELM327.engineCoolantTemp();
+      if (myELM327.nb_rx_state == ELM_SUCCESS)
+      {
+        g_engineCoolantT = g_obdTemp;
+#ifdef DEBUG
+        DEBUG_PORT.println(g_engineCoolantT);
+#endif
+        obd_state = IDLE; // Or any other slow OBD sync
+      }
+      else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+      {
+        //myELM327.printError();
+        obd_state = IDLE; // Or any other slow OBD sync
+      }
+      break;
     }
   }
 }

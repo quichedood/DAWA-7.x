@@ -1,0 +1,100 @@
+//
+// !!! WARNING !!! AUTO-GENERATED FILE!
+// PLEASE DO NOT MODIFY IT AND USE "platformio.ini":
+// https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+//
+{
+    "configurations": [
+        {
+            "name": "PlatformIO",
+            "includePath": [
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/include",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/src",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/lib/FT800-FT813-5.x",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/lib/ELMduino/src",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Adafruit MCP23017 Arduino Library",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/SdFat/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SPI",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Adafruit MLX90614 Library",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Time",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/NeoGPS/src",
+                "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/extEEPROM",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/Wire",
+                "C:/.platformio/packages/framework-arduino-samd/cores/arduino/api/deprecated",
+                "C:/.platformio/packages/framework-arduino-samd/cores/arduino/api/deprecated-avr-comp",
+                "C:/.platformio/packages/framework-cmsis/CMSIS/Include",
+                "C:/.platformio/packages/framework-cmsis-atmel/CMSIS/Device/ATMEL",
+                "C:/.platformio/packages/framework-arduino-samd/cores/arduino",
+                "C:/.platformio/packages/framework-arduino-samd/variants/arduino_mzero",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/HID",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/I2S/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SAMD_AnalogCorrection/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SAMD_BootloaderUpdater/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SBU/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SDU/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SFU/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SNU/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/SSU/src",
+                "C:/.platformio/packages/framework-arduino-samd/libraries/USBHost/src",
+                ""
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/include",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/src",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/lib/FT800-FT813-5.x",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/lib/ELMduino/src",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Adafruit MCP23017 Arduino Library",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/SdFat/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SPI",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Adafruit MLX90614 Library",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/Time",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/NeoGPS/src",
+                    "c:/Users/Edouard Pigeon/OneDrive - APNET/#PERSO/PlatformIO/Projects/DAWA7/.pio/libdeps/mzeroUSB/extEEPROM",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/Wire",
+                    "C:/.platformio/packages/framework-arduino-samd/cores/arduino/api/deprecated",
+                    "C:/.platformio/packages/framework-arduino-samd/cores/arduino/api/deprecated-avr-comp",
+                    "C:/.platformio/packages/framework-cmsis/CMSIS/Include",
+                    "C:/.platformio/packages/framework-cmsis-atmel/CMSIS/Device/ATMEL",
+                    "C:/.platformio/packages/framework-arduino-samd/cores/arduino",
+                    "C:/.platformio/packages/framework-arduino-samd/variants/arduino_mzero",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/HID",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/I2S/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SAMD_AnalogCorrection/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SAMD_BootloaderUpdater/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SBU/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SDU/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SFU/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SNU/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/SSU/src",
+                    "C:/.platformio/packages/framework-arduino-samd/libraries/USBHost/src",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=50204",
+                "ARDUINO_SAMD_ZERO",
+                "__SAMD21G18A__",
+                "ARDUINO=10805",
+                "F_CPU=48000000L",
+                "USBCON",
+                "USB_VID=0x2A03",
+                "USB_PID=0x804E",
+                "USB_PRODUCT=\"Arduino M0\"",
+                "USB_MANUFACTURER=\"Arduino\"",
+                "ARDUINO_ARCH_SAMD",
+                ""
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "compilerPath": "C:/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc.exe",
+            "compilerArgs": [
+                "-mcpu=cortex-m0plus",
+                "-mthumb",
+                ""
+            ]
+        }
+    ],
+    "version": 4
+}

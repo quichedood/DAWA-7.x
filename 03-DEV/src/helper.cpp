@@ -5,7 +5,7 @@
 *****************************************************/
 
 #include <Arduino.h>           // Arduino library
-#include <Adafruit_MCP23017.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
+#include <Adafruit_MCP23X17.h> // I/O Expander MCP23017 (https://github.com/adafruit/Adafruit-MCP23017-Arduino-Library)
 #include <SdFat.h>             // Greiman/SdFat library (https://github.com/greiman/SdFat)
 #include <ELMduino.h>          // ELM327 OBD-II library (https://github.com/PowerBroker2/ELMduino)
 #include <Adafruit_MLX90614.h> // MLX90614 Infrared temperature sensor (https://github.com/adafruit/Adafruit-MLX90614-Library)
@@ -20,22 +20,17 @@
  * ################################################# *
 *****************************************************/
 
-/**************************************************************
-  #initError > Error code on 8 bits (1 > 255)
-**************************************************************/
+/**
+ * Initialization error diagnostic
+ * 
+ * Use the 8 leds to show errors during DAWA initialization
+ * This is an infinite loop
+ *
+ * @param errCode a code error number
+ * @return
+ */
 void initError(uint8_t errCode = 0)
 {
-  delay(2000); // so we can look the error on the display
-  // Poweroff all 8 leds
-  MCP1.digitalWrite(mcp1Led1, HIGH);
-  MCP1.digitalWrite(mcp1Led2, HIGH);
-  MCP1.digitalWrite(mcp1Led3, HIGH);
-  MCP1.digitalWrite(mcp1Led4, HIGH);
-  MCP1.digitalWrite(mcp1Led5, HIGH);
-  MCP1.digitalWrite(mcp1Led6, HIGH);
-  MCP1.digitalWrite(mcp1Led7, HIGH);
-  MCP1.digitalWrite(mcp1Led8, HIGH);
-
   // Infinite loop, blinking leds with 8 bits coding
   while (1)
   {
@@ -75,35 +70,14 @@ void initError(uint8_t errCode = 0)
   }
 }
 
-/**************************************************************
-  #eepromLoadDefaults > Write default working values to EEPROM
-**************************************************************/
-void eepromLoadDefaults(void)
-{
-  // Write default RPM correction ratio and RPM flywheel teeth number
-  EEPROM_writeAnything(0, (uint8_t)DEFAULT_RPM_CORRECTION_RATIO) == sizeof(rpmCorrectionRatio);
-  EEPROM_writeAnything(1, (uint8_t)DEFAULT_RPM_FLYWHEEL_TEETH) == sizeof(rpmFlywheelTeeth);
-
-  // Write enabled digital inputs (8 bits)
-  EEPROM_writeAnything(66, DEFAULT_ENDIGITALINPUTSBITS_VALUE) == sizeof(enDigitalInputsBits);
-
-  // Write enabled analog inputs (8 bits)
-  EEPROM_writeAnything(67, DEFAULT_ENANALOGINPUTSBITS_VALUE) == sizeof(enAnalogInputsBits);
-}
-
-/**************************************************************
-  #eepromSaveRunningValues > Save running values to EEPROM
-**************************************************************/
-void eepromSaveRunningValues(void)
-{
-  // Write RPM correction ratio and RPM flywheel teeth number
-  EEPROM_writeAnything(0, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
-  EEPROM_writeAnything(1, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
-}
-
-/**************************************************************
-  #eepromReset > Reset EEPROM (set "0")
-**************************************************************/
+/**
+ * Reset EEPROM
+ * 
+ * Set all bits to 0
+ *
+ * @param
+ * @return
+ */
 void eepromReset(void)
 {
   for (uint8_t i = 0; i < 128; i++)
@@ -112,40 +86,84 @@ void eepromReset(void)
   }
 }
 
-/**************************************************************
-  #eepromReload > Reload EEPROM settings to var (running program)
-**************************************************************/
+/**
+ * Write default values to EEPROM
+ * 
+ * Write some default values to EEPROM (option to quickly setup DAWA)
+ *
+ * @param
+ * @return
+ */
+void eepromLoadDefaults(void)
+{
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR, (uint8_t)DEFAULT_RPM_CORRECTION_RATIO) == sizeof(g_rpmCorrectionRatio);           // Write default RPM correction ratio
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 1, (uint8_t)DEFAULT_RPM_FLYWHEEL_TEETH) == sizeof(g_rpmFlywheelTeeth);           // Write default RPM flywheel teeth number
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 2, (uint8_t)DEFAULT_TRACK_QTY) == sizeof(g_trackQty);                            // Write the number of tracks in EEPROM
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 3, (uint8_t)DEFAULT_ENDIGITALINPUTSBITS_VALUE) == sizeof(g_enDigitalInputsBits); // Write enabled digital inputs (8 bits)
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 4, (uint8_t)DEFAULT_ENANALOGINPUTSBITS_VALUE) == sizeof(g_enAnalogInputsBits);   // Write enabled analog inputs (8 bits)
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 5, (int16_t)DEFAULT_SELECTED_TRACK_ID) == sizeof(g_currentTrackId);              // Write selected track ID (16 bits)
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 7, (bool)DEFAULT_OBD_FEATURES) == sizeof(g_enObd);                               // Write default OBD features state
+}
+
+/**
+ * Write running values to EEPROM
+ * 
+ * Write new values to EEPROM when quitting menu : setup/general
+ *
+ * @param
+ * @return
+ */
+void eepromSaveRunningValues(void)
+{
+  // Write RPM correction ratio, RPM flywheel teeth number and OBD state
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR, g_rpmCorrectionRatio) == sizeof(g_rpmCorrectionRatio);
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 1, g_rpmFlywheelTeeth) == sizeof(g_rpmFlywheelTeeth);
+  EEPROM_writeAnything(EEPROM_GENERAL_ADDR + 7, g_enObd) == sizeof(g_enObd);
+}
+
+/**
+ * Reload EEPROM settings to global variables
+ * 
+ * Read some parameters stored in EEPROM and write them to global variables in RAM
+ * Load track list from EEPROM to RAM
+ * Load last selected track
+ *
+ * @param
+ * @return
+ */
 void eepromReload(void)
 {
-  // Read default RPM correction ratio and RPM flywheel teeth number
-  EEPROM_readAnything(0, rpmCorrectionRatio) == sizeof(rpmCorrectionRatio);
-  EEPROM_readAnything(1, rpmFlywheelTeeth) == sizeof(rpmFlywheelTeeth);
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR, g_rpmCorrectionRatio) == sizeof(g_rpmCorrectionRatio);       // Read default RPM correction ratio
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 1, g_rpmFlywheelTeeth) == sizeof(g_rpmFlywheelTeeth);       // Read default RPM flywheel teeth number
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 2, g_trackQty) == sizeof(g_trackQty);                       // Read the number of tracks in EEPROM
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 3, g_enDigitalInputsBits) == sizeof(g_enDigitalInputsBits); // Read enabled digital inputs (8 bits)
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 4, g_enAnalogInputsBits) == sizeof(g_enAnalogInputsBits);   // Read enabled analog inputs (8 bits)
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 5, g_currentTrackId) == sizeof(g_currentTrackId);           // Read selected track ID (16 bits)
+  EEPROM_readAnything(EEPROM_GENERAL_ADDR + 7, g_enObd) == sizeof(g_enObd);                             // Read OBD features state
 
   // Read GEAR (ANA1) calibration data (GEAR_CALIB_SIZE x 16 bits)
   for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
   {
-    EEPROM_readAnything(44 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
+    EEPROM_readAnything(EEPROM_GEAR_CALIBRATION_ADDR + (2 * i), g_inAnaGearCalib[i]) == sizeof(g_inAnaGearCalib[i]);
   }
 
-  // Read enabled digital inputs (8 bits)
-  EEPROM_readAnything(66, enDigitalInputsBits) == sizeof(enDigitalInputsBits);
+  // Load track list from EEPROM to RAM
+  loadTracksFromEeprom();
 
-  // Read enabled analog inputs (8 bits)
-  EEPROM_readAnything(67, enAnalogInputsBits) == sizeof(enAnalogInputsBits);
+  // Load selected track
+  loadSelectedTrack(g_currentTrackId);
 }
 
-/**************************************************************
-  Read CSV file
-  https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
-
-  Read a CSV file one field at a time.
-  file - File to read.
-  str - Character array for the field.
-  size - Size of str array.
-  delim - csv delimiter.
-  return - negative value for failure.
-  delimiter, '\n' or zero(EOF) for success.
-**************************************************************/
+/**
+ * Read CSV file
+ * https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
+ *
+ * @param file File to read
+ * @param str Character array for the field
+ * @param size Size of str array
+ * @param delim csv delimiter
+ * @return return '\n' or zero(EOF) for success, negative value for failure.
+ */
 int csvReadText(File *file, char *str, size_t size, char delim)
 {
   char ch;
@@ -188,6 +206,15 @@ int csvReadText(File *file, char *str, size_t size, char delim)
   return rtn;
 }
 
+/**
+ * Read CSV file
+ * https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
+ *
+ * @param file File to read
+ * @param num Address of number to read
+ * @param delim csv delimiter
+ * @return integer
+ */
 int csvReadInt32(File *file, int32_t *num, char delim)
 {
   char buf[20];
@@ -203,6 +230,15 @@ int csvReadInt32(File *file, int32_t *num, char delim)
   return *ptr == 0 ? rtn : -4;
 }
 
+/**
+ * Read CSV file
+ * https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
+ *
+ * @param file File to read
+ * @param num Address of number to read
+ * @param delim csv delimiter
+ * @return integer
+ */
 int csvReadInt16(File *file, int16_t *num, char delim)
 {
   int32_t tmp;
@@ -215,6 +251,15 @@ int csvReadInt16(File *file, int16_t *num, char delim)
   return rtn;
 }
 
+/**
+ * Read CSV file
+ * https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
+ *
+ * @param file File to read
+ * @param num Address of number to read
+ * @param delim csv delimiter
+ * @return integer
+ */
 int csvReadUint32(File *file, uint32_t *num, char delim)
 {
   char buf[20];
@@ -230,6 +275,15 @@ int csvReadUint32(File *file, uint32_t *num, char delim)
   return *ptr == 0 ? rtn : -4;
 }
 
+/**
+ * Read CSV file
+ * https://github.com/greiman/SdFat/blob/master/examples/ReadCsv/ReadCsv.ino
+ *
+ * @param file File to read
+ * @param num Address of number to read
+ * @param delim csv delimiter
+ * @return integer
+ */
 int csvReadUint16(File *file, uint16_t *num, char delim)
 {
   uint32_t tmp;
@@ -242,44 +296,36 @@ int csvReadUint16(File *file, uint16_t *num, char delim)
   return rtn;
 }
 
-int csvReadDouble(File *file, double *num, char delim)
-{
-  char buf[20];
-  char *ptr;
-  int rtn = csvReadText(file, buf, sizeof(buf), delim);
-  if (rtn < 0)
-    return rtn;
-  *num = strtod(buf, &ptr);
-  if (buf == ptr)
-    return -3;
-  while (isspace(*ptr))
-    ptr++;
-  return *ptr == 0 ? rtn : -4;
-}
-
-int csvReadFloat(File *file, float *num, char delim)
-{
-  double tmp;
-  int rtn = csvReadDouble(file, &tmp, delim);
-  if (rtn < 0)
-    return rtn;
-  // could test for too large.
-  *num = tmp;
-  return rtn;
-}
-
-/**************************************************************
-  #dateTimeSd > Get datetime for files creation/modification on SD Card
-**************************************************************/
+/**
+ * Get datetime for files creation/modification on SD Card
+ *
+ * @param date date now
+ * @param time time now
+ * @return
+ */
 void dateTimeSd(uint16_t *date, uint16_t *time)
 {
   *date = FAT_DATE(fix_data.dateTime.year + 2000, fix_data.dateTime.month, fix_data.dateTime.date); // return date using FAT_DATE macro to format fields
   *time = FAT_TIME(fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);  // return time using FAT_TIME macro to format fields
 }
 
-/**************************************************************
-  #segIntersect > Calculate 2 line segments intersection
-**************************************************************/
+/**
+ * Calculate 2 line segments intersection
+ *
+ * Calculate intersection of 2 line segments (the motocycle trace and the finish line)
+ *
+ * @param pos_now_lat latitude now
+ * @param pos_now_lon longitude now
+ * @param pos_prev_lat previous latitude (previous GPS fix)
+ * @param pos_prev_lon previous longitude (previous GPS fix)
+ * @param trackLat1 finish line latitude 1
+ * @param trackLon1 finish line longitude 1
+ * @param trackLat2 finish line latitude 2
+ * @param trackLon2 finish line longitude 2
+ * @param pos_cross_lat crossing point latitude
+ * @param pos_cross_lon crossing point longitude
+ * @return is these lines crossing ? (Y/N)
+ */
 boolean segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_lat, int32_t pos_prev_lon, int32_t trackLat1, int32_t trackLon1, int32_t trackLat2, int32_t trackLon2, int32_t &pos_cross_lat, int32_t &pos_cross_lon)
 {
   bool denomPositive;
@@ -333,9 +379,18 @@ boolean segIntersect(int32_t pos_now_lat, int32_t pos_now_lon, int32_t pos_prev_
   return 1;
 }
 
-/**************************************************************
-  #gpsDistance > Calculate distance between 2 GPS coords (unit = meters) - haversine formula
-**************************************************************/
+/**
+ * GPS distance calculation
+ *
+ * Calculate distance between 2 GPS coords
+ * Based on haversine formula
+ *
+ * @param lat1 latitude 1
+ * @param lon1 longitude 1
+ * @param lat2 latitude 1
+ * @param lon2 longitude 1
+ * @return distance in meters
+ */
 float gpsDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2)
 {
   float dlam, dphi, p = 0.017453292519943295; // (Pi / 180)
@@ -347,202 +402,173 @@ float gpsDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2)
   return 6371000.0 * sqrt(dphi * dphi + dlam * dlam);
 }
 
-/**************************************************************
-  #stopLaptimer > Stop laptimer
-**************************************************************/
-void stopLaptimer(void)
+/**
+ * Stop data acquisition/laptimer
+ *
+ * Stop data acquisition
+ * Properly close files on SDCARD
+ * Remove the first lap which is not an entire lap as you start from paddocks
+ *
+ * @param
+ * @return Running status (0 = not running)
+ */
+int8_t stopLaptimer(void)
 {
   SdFile::dateTimeCallback(dateTimeSd);
-  isRunning = false; // ... we stop recording
-  logFile.close();   // Close file on SDcard
-  lapFile.close();   // Close file on SDcard
-}
+  logFile.close(); // Close file on SDcard
+  lapFile.close(); // Close file on SDcard
 
-/**************************************************************
-  #startLaptimer > Start laptimer (init multiple var, auto select nearest track, create files on SD card)
-**************************************************************/
-boolean startLaptimer(void)
-{
-  uint8_t bitShift = 0b00000001, tmpComp;
-  SdFile::dateTimeCallback(dateTimeSd);
-  if (fix_data.valid.location) // We need GPS fix before starting
+  // Remove lap 0 (the one you start from paddock)
+  for (uint8_t i = 0; i < g_lapQty; i++)
   {
-    /**************************************************************
-      Select nearest track from the file "TRACKS.csv" on sdcard
-    **************************************************************/
-    recordTrackData = false;
-    trackFile = sd.open("TRACKS.csv", FILE_READ);
-    if (trackFile)
+    if (i < g_lapQty - 1)
     {
-      while (trackFile.available())
-      {
-        csvReadUint16(&trackFile, &trackId, csvDelim);
-        csvReadText(&trackFile, trackName, sizeof(trackName), csvDelim); // One line per track : "1;CAROLE;489799930;25224350;489800230;25226330" (<trackname>;<startline_a_lat>;<startline_a_lon>;<startline_b_lat>;<startline_b_lon>)
-        csvReadInt32(&trackFile, &flineLat1, csvDelim);                  // Points A & B should be at the left and at the right of the finishline (a few meters)
-        csvReadInt32(&trackFile, &flineLon1, csvDelim);
-        csvReadInt32(&trackFile, &flineLat2, csvDelim);
-        csvReadInt32(&trackFile, &flineLon2, csvDelim);
-
-        // Calculate distance between 2 GPS coordinates
-        coordsDistance = gpsDistance(fix_data.latitudeL(), fix_data.longitudeL(), flineLat1, flineLon1) / 1000;
-
-        // If you are on a known track, then we select it
-        if (coordsDistance <= MAX_TRACK_DISTANCE)
-        {
-          recordTrackData = true;
-          break; // Break here so last read values are the good ones !
-        }
-      }
-      trackFile.close();
-    }
-
-    /**************************************************************
-      Create new datafile : history file (append)
-    **************************************************************/
-    if (recordTrackData == true)
-    { // No track = no history !
-      sprintf(filename, "HISTORY.csv");
-      if (historyFile.open(filename, O_CREAT | O_APPEND | O_WRITE))
-      {
-        historyFile.print(fix_data.dateTime);
-        historyFile.print(F(";"));
-        historyFile.print(fix_data.dateTime.year);
-        if (fix_data.dateTime.month < 10)
-          historyFile.print(F("0")); // Leading zeros
-        historyFile.print(fix_data.dateTime.month);
-        if (fix_data.dateTime.date < 10)
-          historyFile.print(F("0")); // Leading zeros
-        historyFile.print(fix_data.dateTime.date);
-        historyFile.print(F("-"));
-        if (fix_data.dateTime.hours < 10)
-          historyFile.print(F("0")); // Leading zeros
-        historyFile.print(fix_data.dateTime.hours);
-        if (fix_data.dateTime.minutes < 10)
-          historyFile.print(F("0")); // Leading zeros
-        historyFile.print(fix_data.dateTime.minutes);
-        if (fix_data.dateTime.seconds < 10)
-          historyFile.print(F("0")); // Leading zeros
-        historyFile.print(fix_data.dateTime.seconds);
-        historyFile.print(F(";"));
-        historyFile.println(trackId);
-        historyFile.close(); // Close file on SDcard
-      }
-      else
-      {
-        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
-        return 1;
-      }
-
-      /**************************************************************
-        Create new datafile : log file (create new)
-      **************************************************************/
-      sprintf(filename, "%02u%02u%02u-%02u%02u%02u.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
-      if (logFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
-      {
-        // Time, distance and lap (always printed)
-        logFile.print(LABEL_LOG_HEADER_1);
-
-        // KPH, heading (always printed)
-        logFile.print(LABEL_LOG_HEADER_2);
-
-        // Digital inputs (printed if enabled)
-        bitShift = 0b00000001;
-        for (uint8_t i = 0; i < 4; i++)
-        {
-          tmpComp = bitShift & enDigitalInputsBits;
-          if (tmpComp == bitShift)
-          {
-            logFile.print(digitalInputsLabel[i]);
-            logFile.print(F(";"));
-          }
-          bitShift = bitShift << 1;
-        }
-
-        // Analog inputs (printed if enabled)
-        bitShift = 0b00000001;
-        for (uint8_t i = 0; i < 8; i++)
-        {
-          tmpComp = bitShift & enAnalogInputsBits;
-          if (tmpComp == bitShift)
-          {
-            logFile.print(analogInputsLabel[i]);
-            logFile.print(F(";"));
-          }
-          bitShift = bitShift << 1;
-        }
-
-        // Infrared temperature (printed if enabled)
-        for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
-        {
-          if (mlxAddresses[i] != 0x00)
-          {
-            logFile.print(LABEL_LOG_HEADER_3);
-            logFile.print(i);
-            logFile.print(F(";"));
-          }
-        }
-
-        // Latitude & longitude (always printed)
-        logFile.println(LABEL_LOG_HEADER_4);
-      }
-      else
-      {
-        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
-        return 1;
-      }
-
-      /**************************************************************
-        Create new datafile : laptime file (create new)
-      **************************************************************/
-      sprintf(filename, "%02u%02u%02u-%02u%02u%02u-LAPTIMES.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds);
-      if (lapFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
-      {
-        //
-      }
-      else
-      {
-        showMessage(LABEL_LOG_FILEERROR, 2000, 2);
-        return 1;
-      }
-
-      /**************************************************************
-        Init some vars
-      **************************************************************/
-      isRunning = true; // ... we start recording
-      lapCounter = 0;   // Lap 0 (we start from paddocks)
-      lapSec = 0;
-      lapCsec = 0;
-      totalDistance = 0;
-      addFinishLog = false;
-    }
-    else
-    {
-      // Run as data acquisition only (no laptimer because no track found)
-      showMessage(LABEL_RUN_AS_DATALOGGER, 2000, 1);
-      return 0;
+      g_lapsList[i] = g_lapsList[i + 1];
     }
   }
-  else
-  {
-    showMessage(LABEL_NO_GPS_SIGNAL, 2000, 2);
-    return 1;
-  }
+  g_lapQty--;
   return 0;
 }
 
-/**************************************************************
-  #showMessage > Print message on TFT
-**************************************************************/
-void showMessage(const char *label, uint32_t delay, uint8_t type)
+/**
+ * Start data acquisition/laptimer
+ *
+ * Start data acquisition (and laptimer if GPS signal is ok and a track is selected)
+ * Some CSV files are created on SDCARD for logging
+ * Some vars are initialized
+ *
+ * @param
+ * @return Running status (-1 = error, 0 = not running, 1 = run as datalogger only, 2 = run as datalogger and laptimer)
+ */
+int8_t startLaptimer(void)
 {
-  strcpy(msgLabel, label);
-  msgDelay = millis() + delay;
-  msgType = type;
+  char filename[64]; // Filename
+  uint8_t bitShift, tmpComp;
+  SdFile::dateTimeCallback(dateTimeSd);
+
+  // Create new datafile : log file (create new)
+  sprintf(filename, "%02u%02u%02u-%02u%02u%02u-%s.csv", fix_data.dateTime.year, fix_data.dateTime.month, fix_data.dateTime.date, fix_data.dateTime.hours, fix_data.dateTime.minutes, fix_data.dateTime.seconds, g_currentTrack.trackName);
+  strcpy(g_workingFilename, filename);
+  if (logFile.open(filename, O_CREAT | O_WRITE | O_EXCL))
+  {
+    // Time, distance and lap (always printed)
+    logFile.print(LABEL_LOG_HEADER_1);
+
+    // KPH, heading (always printed)
+    logFile.print(LABEL_LOG_HEADER_2);
+
+    // Digital inputs (printed if enabled)
+    bitShift = 0b00000001;
+    for (uint8_t i = 0; i < 4; i++)
+    {
+      tmpComp = bitShift & g_enDigitalInputsBits;
+      if (tmpComp == bitShift)
+      {
+        logFile.print(digitalInputsLabel[i]);
+        logFile.print(F(";"));
+      }
+      bitShift = bitShift << 1;
+    }
+
+    // Analog inputs (printed if enabled)
+    bitShift = 0b00000001;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+      tmpComp = bitShift & g_enAnalogInputsBits;
+      if (tmpComp == bitShift)
+      {
+        logFile.print(analogInputsLabel[i]);
+        logFile.print(F(";"));
+      }
+      bitShift = bitShift << 1;
+    }
+
+    // Infrared temperature (printed if enabled)
+    for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
+    {
+      if (g_mlxAddresses[i] != 0x00)
+      {
+        logFile.print(LABEL_LOG_HEADER_3);
+        logFile.print(i);
+        logFile.print(F(";"));
+      }
+    }
+
+    // Latitude & longitude (always printed)
+    logFile.println(LABEL_LOG_HEADER_4);
+  }
+  else
+  {
+    showMessage(LABEL_LOG_FILEERROR, 2000, 2);
+    return -1;
+  }
+
+  // If GPS ready and track selected we do data acquisition AND laptimer
+  if (fix_data.valid.location && g_currentTrack.trackId >= 0)
+  {
+    // Create/append laptimes file
+    sprintf(filename, "LAPTIMES.csv");
+    if (lapFile.open(filename, O_CREAT | O_APPEND | O_WRITE))
+    {
+      // headers ?
+    }
+    else
+    {
+      showMessage(LABEL_LOG_FILEERROR, 2000, 2);
+      return -1;
+    }
+    g_lapQty = 0;
+    g_lapSec = 0;
+    g_lapCsec = 0;
+    g_totalDistance = 0;
+
+    // Init current lap (starting from paddocks)
+    g_currentLap.lapStartTimestampS = fix_data.dateTime;
+    g_currentLap.lapStartTimestampCs = fix_data.dateTime_cs; // This first value (lap 0 only) is not accurate because GPS is running @ 10hz so the precision is on 1/10 (and not on 1/100). This is not important because we start from paddocks by pressing the start button manually.
+    g_currentLap.lapEndTimestampS = fix_data.dateTime;
+    g_currentLap.lapEndTimestampCs = fix_data.dateTime_cs;
+    g_currentLap.lapTimeS = 0;
+    g_currentLap.lapTimeCs = 0;
+    g_currentLap.lapTime = 0.00;
+    g_currentLap.lapNumber = 0;
+    g_currentLap.lapMaxSpeed = 0;
+    g_currentLap.lapTrackId = g_currentTrack.trackId;
+    g_currentLap.lapIsBest = false;
+    return 2;
+  }
+  else // Run as data acquisition only (no laptimer because no valid GPS signal and/or track selected)
+  {
+    g_lapQty = 0;
+    g_lapSec = 0;
+    g_lapCsec = 0;
+    g_totalDistance = 0;
+    showMessage(LABEL_RUN_AS_DATALOGGER, 2000, 1);
+    return 1;
+  }
 }
 
-/**************************************************************
-  #sendUBX > Send UBX commands to UBLOX GPS
-**************************************************************/
+/**
+ * Print message on TFT screen
+ *
+ * @param label a text message
+ * @param delay the time during which the message should be printed on screen (ms)
+ * @param type the type of message (1 = OK/green, 2 = ERROR/red)
+ * @return
+ */
+void showMessage(const char *label, uint32_t delay, uint8_t type)
+{
+  strcpy(g_msgLabel, label);
+  g_msgDelay = millis() + delay;
+  g_msgType = type;
+}
+
+/**
+ * Send UBX commands to UBLOX GPS
+ *
+ * @param progmemBytes data
+ * @param len length of progmemBytes
+ * @return
+ */
 void sendUBX(const unsigned char *progmemBytes, size_t len)
 {
   GPS_PORT.write(0xB5); // SYNC1
@@ -560,35 +586,59 @@ void sendUBX(const unsigned char *progmemBytes, size_t len)
   GPS_PORT.write(b); // CHECKSUM B
 }
 
-/**************************************************************
-  #timeAdd > Add a time [arg0] (Ex : 5.14) to another which is composed of seconds [arg1] and milliseconds [arg2]. Return seconds [arg3] and milliseconds [arg4]
-**************************************************************/
-void timeAdd(float timeSecCsec, int32_t endSec, int32_t endCsec, int32_t &returnSec, int32_t &returnCsec)
+/**
+ * Time to finish line calculation
+ *
+ * Add a time [arg0] (Ex : 5.14) to another which is composed of seconds [arg1] and centiseconds [arg2]. Return seconds [arg3] and centiseconds [arg4]
+ *
+ * @param timeSecCsec time 1
+ * @param endSec seconds from time 2
+ * @param endCsec hundredth of seconds from time 2
+ * @param returnSec total seconds time 1 + time 2
+ * @param returnCsec total hundredth of seconds time 1 + time 2
+ * @return
+ */
+void timeToFinishLineCalculation(float timeSecCsec, uint32_t endSec, uint8_t endCsec, uint32_t &returnSec, uint8_t &returnCsec)
 {
   returnSec = endSec + (int32_t)(timeSecCsec + (endCsec / 100.00));
   returnCsec = ((timeSecCsec + (endCsec / 100.00)) - (int32_t)(timeSecCsec + (endCsec / 100.00))) * 100;
 }
 
-/**************************************************************
-  #timeSubstract > Substract a time [arg0][arg1] to another [arg2][arg3]. Return seconds [arg4] and milliseconds [arg6]
-**************************************************************/
-void timeSubstract(int32_t s1, int32_t cs1, int32_t s2, int32_t cs2, int32_t &returnSec, int32_t &returnCsec)
+/**
+ * Lap time calculation
+ *
+ * Substract a time [arg0][arg1] to another [arg2][arg3]. Return seconds [arg4] and centiseconds [arg5]
+ *
+ * @param s1 seconds from time 1
+ * @param cs1 hundredth of seconds from time 1
+ * @param s2 seconds from time 2
+ * @param cs2 hundredth of seconds from time 2
+ * @param returnSec total seconds time 1 - time 2
+ * @param returnCsec total hundredth of seconds time 1 - time 2
+ * @return
+ */
+void lapTimeCalculation(uint32_t s1, uint8_t cs1, uint32_t s2, uint8_t cs2, uint32_t &returnSec, uint8_t &returnCsec)
 {
-  returnCsec = cs1 - cs2;
-  if (returnCsec < 0)
+  if (cs1 < cs2)
   {
     returnSec = (s1 - s2) - 1;
-    returnCsec += 100;
+    returnCsec = 100 + cs1 - cs2;
   }
   else
   {
     returnSec = s1 - s2;
+    returnCsec = cs1 - cs2;
   }
 }
 
-/**************************************************************
-  #adjustTime > GPS time adjust
-**************************************************************/
+/**
+ * GPS time adjust
+ *
+ * NeoGPS function used to adjust time
+ *
+ * @param dt datetime from a GPS fix
+ * @return
+ */
 void adjustTime(NeoGPS::time_t &dt)
 {
   NeoGPS::clock_t seconds = dt; // convert date/time structure to seconds
@@ -630,10 +680,15 @@ void adjustTime(NeoGPS::time_t &dt)
   dt = seconds; // convert seconds back to a date/time structure
 }
 
-/**************************************************************
-  #initADC > Initialize ADC chip (I2C)
-**************************************************************/
-uint8_t initADC()
+/**
+ * Initialize ADC chip
+ *
+ * Configuration mode, conversion rate and which channels are enabled
+ *
+ * @param bits Which channels are enabled
+ * @return
+ */
+uint8_t initADC(uint8_t bits)
 {
   Wire.beginTransmission(0x1D);
   Wire.write(uint8_t(0x0B)); // Advanced Configuration Register
@@ -646,8 +701,8 @@ uint8_t initADC()
   Wire.endTransmission();
 
   Wire.beginTransmission(0x1D);
-  Wire.write(uint8_t(0x08));                // Channel Disable Register
-  Wire.write(uint8_t(~enAnalogInputsBits)); // Enable or disable channels
+  Wire.write(uint8_t(0x08));  // Channel Disable Register
+  Wire.write(uint8_t(~bits)); // Enable or disable channels
   Wire.endTransmission();
 
   Wire.beginTransmission(0x1D);
@@ -656,9 +711,14 @@ uint8_t initADC()
   return Wire.endTransmission();
 }
 
-/**************************************************************
-  #configureADC > configure ADC chip input bits (I2C)
-**************************************************************/
+/**
+ * Configure ADC chip input bits
+ *
+ * Send a byte to reconfigure ADC enabled channels
+ *
+ * @param bits Which channels are enabled
+ * @return
+ */
 uint8_t configureADC(uint8_t bits)
 {
   Wire.beginTransmission(0x1D);
@@ -677,9 +737,14 @@ uint8_t configureADC(uint8_t bits)
   return Wire.endTransmission();
 }
 
-/**************************************************************
-  #readAdcValue > Read one specific ADC value
-**************************************************************/
+/**
+ * Read single ADC value
+ *
+ * Read single value from the ADC
+ *
+ * @param registerID Register ID corresponding to the input you want to read
+ * @return ADC raw value
+ */
 uint16_t readAdcValue(uint8_t registerID)
 {
   Wire.beginTransmission(0x1D); // Talk to ADC128D818 - A0 and A1 to GND
@@ -695,40 +760,50 @@ uint16_t readAdcValue(uint8_t registerID)
   return -1;
 }
 
-/**************************************************************
-  #readAdcValues > Read all ADC values (8)
-  Return ADC value or 0 if disable by user
-**************************************************************/
-void readAdcValues(uint16_t anaValues[])
+/**
+ * Read all 8 ADC values
+ *
+ * This function read and store in a array raw values of all 8 raw ADC values
+ *
+ * @param
+ * @return
+ */
+void readAdcValues(void)
 {
   uint8_t bitShift = 0b00000001, tmpComp;
   uint8_t registerID = 0x20; // First register ID is 0x20
   for (uint8_t i = 0; i < 8; i++)
   {
-    tmpComp = bitShift & enAnalogInputsBits;
+    tmpComp = bitShift & g_enAnalogInputsBits;
     if (tmpComp == bitShift)
     {
-      anaValues[i] = readAdcValue(registerID);
+      g_anaValues[i] = readAdcValue(registerID);
     }
     else
     {
-      anaValues[i] = 0;
+      g_anaValues[i] = 0;
     }
     registerID++;
     bitShift = bitShift << 1;
   }
 }
 
-/**************************************************************
-  #formatAdcValues > Format all ADC values (8)
-  Return formatted ADC values
-**************************************************************/
-void formatAdcValues(uint16_t anaValues[])
+/**
+ * Format all 8 ADC values
+ *
+ * This function store in a array formated values of all 8 raw ADC values
+ * The analog 1 is specific as this is the gear value : a char is stored in another array > neutral is "N"
+ * All the others a simple mapped value (0 to 100)
+ *
+ * @param
+ * @return
+ */
+void formatAdcValues(void)
 {
   uint8_t bitShift = 0b00000001, tmpComp;
   for (uint8_t i = 0; i < 8; i++)
   {
-    tmpComp = bitShift & enAnalogInputsBits;
+    tmpComp = bitShift & g_enAnalogInputsBits;
     if (tmpComp == bitShift)
     {
       switch (i)
@@ -737,16 +812,16 @@ void formatAdcValues(uint16_t anaValues[])
       case 0:
         for (uint8_t j = 0; j < GEAR_CALIB_SIZE; j++)
         {
-          if (anaValues[i] > inAnaGearCalib[j] - GEAR_OFFSET && anaValues[i] <= inAnaGearCalib[j] + GEAR_OFFSET)
+          if (g_anaValues[i] > g_inAnaGearCalib[j] - GEAR_OFFSET && g_anaValues[i] <= g_inAnaGearCalib[j] + GEAR_OFFSET)
           {
             if (j == 0)
             {
-              gearNCheck++;
+              g_gearNCheck++;
             }
-            if ((j == 0 && gearNCheck > 3) || j > 0) // We test 3 times to prevent displaying "N" between 2 gears
+            if ((j == 0 && g_gearNCheck > 3) || j > 0) // We test 3 times to prevent displaying "N" between 2 gears
             {
-              anaValuesChar[i] = gearName[j];
-              gearNCheck = 0;
+              g_anaValuesChar[i] = gearName[j];
+              g_gearNCheck = 0;
             }
           }
         }
@@ -754,7 +829,7 @@ void formatAdcValues(uint16_t anaValues[])
         break;
       // bit 1 to 7 : Analog 2 to 8 (all of the others except ANA1/GEAR)
       default:
-        anaValues[i] = map(anaValues[i], 0, 4096, 0, 100);
+        //g_anaValues[i] = map(g_anaValues[i], 0, 4096, 0, 100); // Map values from 0 to 100 (default is 0 to 4096)
         break;
       }
     }
@@ -762,13 +837,19 @@ void formatAdcValues(uint16_t anaValues[])
   }
 }
 
-/**************************************************************
-  #gearCalibration > Calibrate gear (values for each gear)
-**************************************************************/
+/**
+ * Calibrate gears
+ *
+ * For each gear we read and save the corresponding analogic value
+ * This value is stored on EEPROM
+ *
+ * @param
+ * @return
+ */
 void gearCalibration(void)
 {
   char bufferMsg[13];
-  char bufferGear[1];
+  char bufferGear[2];
   for (uint8_t i = 0; i < GEAR_CALIB_SIZE; i++)
   {
     sprintf(bufferGear, "%c", gearName[i]);
@@ -777,24 +858,40 @@ void gearCalibration(void)
     showMessage(bufferMsg, 3000, 0);
     TFT_display(); // Refresh TFT to print message
     delay(3000);
-    inAnaGearCalib[i] = readAdcValue(0x20); // 0x20 is first register (ANA1/GEAR)
-    EEPROM_writeAnything(44 + (2 * i), inAnaGearCalib[i]) == sizeof(inAnaGearCalib[i]);
+    g_inAnaGearCalib[i] = readAdcValue(0x20); // 0x20 is first register (ANA1/GEAR)
+    EEPROM_writeAnything(EEPROM_GEAR_CALIBRATION_ADDR + (2 * i), g_inAnaGearCalib[i]) == sizeof(g_inAnaGearCalib[i]);
   }
   showMessage(LABEL_GEAR_CALIBRATION_OK, 2000, 1);
 }
 
-/**************************************************************
-  #autodetectMlx > Add new MLX chips
-**************************************************************/
+/**
+ * Add new MLX chips (infrared temperature sensor)
+ *
+ * MLX chips address can be defined if there's only one available on I2C bus
+ * I'm using in I/O expander (MCP23017) to power on or power off MLX chips
+ * I power on the first MLX, set a new I2C address, then power it off, power on the second one, set a new I2C address, etc
+ * MLX I2C address are then stored on EEPROM
+ * DAWA has to be restarted
+ *
+ * @param
+ * @return
+ */
 void autodetectMlx(void)
 {
+  char bufferMsg[15];
+  char bufferMlx[2];
   uint8_t mlxAddress, mlxId = 0; // 8 to 16 bit
   for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
   {
-    mlxAddresses[i] = 0x00; // Array which will contains all discovered MLX addresses. This array will be wrote on EEPROM at the end
+    g_mlxAddresses[i] = 0x00; // Array which will contains all discovered MLX addresses. This array will be wrote on EEPROM at the end
   }
-  for (uint8_t i = 0; i < 8; i++)
+  for (uint8_t i = 0; i < MAX_MLX_SIZE; i++)
   {
+    sprintf(bufferMlx, "%d", i + 1);
+    strcpy(bufferMsg, LABEL_MLX_AUTODETECT);
+    strcat(bufferMsg, bufferMlx);
+    showMessage(bufferMsg, 1000, 0);
+    TFT_display();                                     // Refresh TFT to print message
     mcp2EnableOneOutput(i);                            // Enable only one MCP output, all the others are disabled
     Adafruit_MLX90614 mynewmlx = Adafruit_MLX90614(0); // 0 = broadcast, only one MLX chip should be plugged/powered on on I2C bus
     mynewmlx.begin();
@@ -809,32 +906,38 @@ void autodetectMlx(void)
 #endif
     if (mlxAddress != 0xFF)
     { // If we read something ...
-      mlxAddresses[mlxId] = FIRST_MLX_ADDRESS + mlxId;
-      mynewmlx.writeAddr(mlxAddresses[mlxId]); // Set custom I2C address
+      g_mlxAddresses[mlxId] = FIRST_MLX_ADDRESS + mlxId;
+      mynewmlx.writeAddr(g_mlxAddresses[mlxId]); // Set custom I2C address
 #ifdef DEBUG
       DEBUG_PORT.print("Change MLX addr to : ");
       DEBUG_PORT.print(mynewmlx.readAddr());
       DEBUG_PORT.print(" (should be : ");
-      DEBUG_PORT.print(mlxAddresses[mlxId]);
+      DEBUG_PORT.print(g_mlxAddresses[mlxId]);
       DEBUG_PORT.println(")");
 #endif
       mlxId++;
     }
   }
-  if (EEPROM_writeAnything(68, mlxAddresses) == sizeof(mlxAddresses))
-  { // Write array of addresses on EEPROM
-    //OUT_PORT.print(mlxId); OUT_PORT.println(F(" MLX detected"));
+  if (EEPROM_writeAnything(EEPROM_MLX_ADDR, g_mlxAddresses) == sizeof(g_mlxAddresses)) // Save to EEPROM MLX addresses
+  {
+    showMessage(LABEL_MLX_AUTODETECT_OK, 2000, 1);
   }
   else
   {
-    //OUT_PORT.println(F("Error adding new MLX sensors"));
+    showMessage(LABEL_MLX_AUTODETECT_NOK, 2000, 2);
   }
   mcp2EnableOneOutput(8); // Re-enable all outputs on MCP2
 }
 
-/**************************************************************
-  #mcp2EnableOneOutput > Control MCP2 outputs : only one HIGH (0 < id < 8) or all (id = 8)
-**************************************************************/
+/**
+ * Control MCP2 outputs
+ *
+ * If specified ID is between 0 and 7 the concerned output is enabled
+ * If specified ID = 8 then enable the 8 outputs
+ *
+ * @param output id to enable
+ * @return
+ */
 void mcp2EnableOneOutput(uint8_t idOutput)
 {
   for (uint8_t i = 0; i < 8; i++)
@@ -851,9 +954,234 @@ void mcp2EnableOneOutput(uint8_t idOutput)
   }
 }
 
-/**************************************************************
-  SERCOM5_Handler : Secondary hardware serial for bluetooth
-**************************************************************/
+/**
+ * Import tracks from SDCARD to EEPROM
+ *
+ * Read the file LABEL_TRACKFILENAME on the SDCARD
+ * Put the data in a "Track" structure then write it on EEPROM
+ *
+ * @param
+ * @return number of tracks imported
+ */
+uint8_t importTracksFromSd(void)
+{
+  Track myTrack;
+  uint8_t trackInc;
+  File trackFile;
+  trackFile = sd.open(LABEL_TRACKFILENAME, FILE_READ);
+  if (trackFile)
+  {
+    trackInc = 0;
+    while (trackFile.available())
+    {
+      // Read data
+      csvReadInt16(&trackFile, &myTrack.trackId, csvDelim);
+      csvReadText(&trackFile, myTrack.trackName, sizeof(myTrack.trackName), csvDelim); // One line per track : "1;CAROLE;489799930;25224350;489800230;25226330" (<trackID>;<trackname>;<startline_a_lat>;<startline_a_lon>;<startline_b_lat>;<startline_b_lon>)
+      csvReadInt32(&trackFile, &myTrack.trackFlineLat1, csvDelim);                     // Points A & B should be at the left and at the right of the finishline (a few meters)
+      csvReadInt32(&trackFile, &myTrack.trackFlineLon1, csvDelim);
+      csvReadInt32(&trackFile, &myTrack.trackFlineLat2, csvDelim);
+      csvReadInt32(&trackFile, &myTrack.trackFlineLon2, csvDelim);
+      myTrack.trackDistance = 0; // Distance is not stored in EEPROM this is useless
+
+      // Check if there is less than MAX_TRACKS to import AND if there is enough space on EEPROM
+      if (((trackInc + 1) <= MAX_TRACKS) && (((trackInc + 1) * sizeof(myTrack)) < EEPROM_SIZE - EEPROM_FIRST_TRACK_ADDR))
+      {
+        // Write data to EEPROM
+        EEPROM_writeAnything(EEPROM_FIRST_TRACK_ADDR + (trackInc * sizeof(myTrack)), myTrack);
+        trackInc++;
+      }
+      else
+      {
+        if ((trackInc + 1) <= MAX_TRACKS)
+        {
+          showMessage(LABEL_TOO_MANY_TRACKS, 2000, 2);
+          TFT_display(); // Refresh TFT to print message
+          delay(2000);
+          break; // Too many tracks, stop importing
+        }
+        else
+        {
+          showMessage(LABEL_EEPROM_FULL, 2000, 2);
+          TFT_display(); // Refresh TFT to print message
+          delay(2000);
+          break; // EEPROM is full, stop importing
+        }
+      }
+    }
+    trackFile.close();
+    showMessage(LABEL_IMPORT_TRACKS_OK, 2000, 1);
+    return trackInc;
+  }
+  else
+  {
+    showMessage(LABEL_LOG_NOTRKFILE, 2000, 2);
+    return 0;
+  }
+}
+
+/**
+ * Load entire track list from EEPROM to RAM
+ *
+ * Load entire track list from EEPROM into an array of tracks (g_tracksList)
+ * Distance from your position is dynamically calculated here if GPS fix is valid
+ *
+ * @param
+ * @return
+ */
+void loadTracksFromEeprom(void)
+{
+  uint8_t i;
+  for (i = 0; i < g_trackQty; i++)
+  {
+    EEPROM_readAnything(EEPROM_FIRST_TRACK_ADDR + (i * sizeof(g_tracksList[i])), g_tracksList[i]);
+    if (fix_data.valid.location)
+    {
+      refreshTrackDistance();
+    }
+  }
+}
+
+/**
+ * Load selected Track from track list based on track ID
+ *
+ * Load specific track data based on his ID
+ * The track is loaded in a global var (g_currentTrack)
+ * if track ID is not found the g_nullTrack is loaded
+ *
+ * @param trackId the track ID specified in the csv file imported from sdcard
+ * @return
+ */
+void loadSelectedTrack(int16_t trackId)
+{
+  uint8_t i;
+  g_currentTrack = g_nullTrack;
+  if (trackId >= 0)
+  {
+    for (i = 0; i < g_trackQty; i++)
+    {
+      if (g_tracksList[i].trackId == trackId)
+      {
+        g_currentTrack = g_tracksList[i];
+      }
+    }
+  }
+}
+
+/**
+ * Get track name corresponding to track ID
+ *
+ * Track name is copied in global var "g_trackName"
+ * if track ID is not found a label error is copied in the same global var
+ *
+ * @param trackId the track ID specified in the csv file imported from sdcard
+ * @return
+ */
+void getTrackName(int16_t trackId)
+{
+  uint8_t i;
+  strcpy(g_trackName, LABEL_UNKNOWN_TRACK);
+  if (trackId >= 0)
+  {
+    for (i = 0; i < g_trackQty; i++)
+    {
+      if (g_tracksList[i].trackId == trackId)
+      {
+        strcpy(g_trackName, g_tracksList[i].trackName);
+      }
+    }
+  }
+}
+
+/**
+ * Return ID of the nearest track from where you are now
+ *
+ * Get the ID of the nearest track from your position
+ * Read all tracks data from an array of tracks (g_tracksList) and check if the distance is <= MAX_TRACK_DISTANCE
+ * The last track which meets the condition is returned
+ *
+ * @param
+ * @return track ID (-1 if not found)
+ */
+int16_t autoselectTrack(void)
+{
+  uint8_t i;
+  int16_t nearestTrackId = -1;
+  if (fix_data.valid.location)
+  {
+    for (i = 0; i < g_trackQty; i++)
+    {
+      refreshTrackDistance();
+      if (g_tracksList[i].trackDistance <= MAX_TRACK_DISTANCE)
+      {
+        nearestTrackId = g_tracksList[i].trackId;
+      }
+    }
+  }
+  return nearestTrackId;
+}
+
+/**
+ * Refresh the distance to all the tracks from where you are now
+ *
+ * Update the distance to the tracks from where you are now
+ * Distances are calculated with Haversine formula and GPS coordinates of your position and track finish line
+ *
+ * @param
+ * @return
+ */
+void refreshTrackDistance(void)
+{
+  uint8_t i;
+  if (fix_data.valid.location)
+  {
+    for (i = 0; i < g_trackQty; i++)
+    {
+      g_tracksList[i].trackDistance = gpsDistance(fix_data.latitudeL(), fix_data.longitudeL(), g_tracksList[i].trackFlineLat1, g_tracksList[i].trackFlineLon1) / 1000;
+    }
+  }
+}
+
+/**
+ * Update best lap
+ *
+ * Parse all laps in "g_lapsList" and get the best laptime
+ * Parse again all laps in "g_lapsList" and set for each one "lapIsBest" value (true or false)
+ *
+ * @param
+ * @return
+ */
+void updateBestLap(void)
+{
+  uint8_t i;
+  float bestLap = 999.99;
+  for (i = 1; i <= g_lapQty; i++)
+  {
+    if (g_lapsList[i].lapTime < bestLap)
+    {
+      bestLap = g_lapsList[i].lapTime;
+    }
+  }
+  for (i = 1; i <= g_lapQty; i++)
+  {
+    if (g_lapsList[i].lapTime == bestLap)
+    {
+      g_lapsList[i].lapIsBest = true;
+    }
+    else
+    {
+      g_lapsList[i].lapIsBest = false;
+    }
+  }
+}
+
+/**
+ * SERCOM5_Handler
+ *
+ * Secondary hardware serial for bluetooth
+ *
+ * @param
+ * @return
+ */
 void SERCOM5_Handler(void)
 {
   OBD2_PORT.IrqHandler();
