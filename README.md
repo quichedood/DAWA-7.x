@@ -1,4 +1,4 @@
-# DAWA-7.x - FR (See below for US)
+# DAWA-7.x
 
 ![DAWA7](/06-PICTURES/20210307_DEV.jpg?raw=true "DAWA7")
 
