@@ -1,0 +1,6 @@
+Ce dont vous aurez besoin :
+- Circuits imprimés (j'ai quelques exemplaires disponibles)
+- Masque pour déposer l'étain en pate (j'en ai qu'un seul je peux le prêter si besoin)
+- L'ensemble des composants
+- Programmateur ATMEL ICE pour le µproc
+- Module pour écrire dans la mémoire de l'écran TFT : UMFT4222EV (https://ftdichip.com/products/umft4222ev)
